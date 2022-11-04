@@ -68,6 +68,7 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
   // Only one of them will call Base::init(hw,nh);
   MotionBase::init(hw,nh);
   ForceBase::init(hw,nh);
+  m_use_parallel_force_position_control = false;
 
   if (!nh.getParam("compliance_ref_link",m_compliance_ref_link))
   {
@@ -149,14 +150,26 @@ template <class HardwareInterface>
 ctrl::Vector6D CartesianComplianceController<HardwareInterface>::
 computeComplianceError()
 {
-  ctrl::Vector6D net_force =
+  ctrl::Vector6D net_force;
+  if (!m_use_parallel_force_position_control)
+    net_force =
 
-    // Spring force in base orientation
-    Base::displayInBaseLink(m_stiffness,m_compliance_ref_link) * MotionBase::computeMotionError()
+      // Spring force in base orientation
+      Base::displayInBaseLink(m_stiffness,m_compliance_ref_link) * MotionBase::computeMotionError()
 
-    // Sensor and target force in base orientation
-    + ForceBase::computeForceError();
+      // Sensor and target force in base orientation
+      + ForceBase::computeForceError();
+  else // Add a selection matrix to allow finer control of which control to use for each 
+  {
+    net_force =
 
+      // Position controller: PID gains scale by m_stiffness
+      m_selection_matrix * Base::displayInBaseLink(m_stiffness,m_compliance_ref_link) * MotionBase::computeMotionError()
+
+      // Sensor and target force in base orientation
+      + ((ctrl::Matrix6D::Identity() - m_selection_matrix) * ForceBase::computeForceError());
+  }
+  
   return net_force;
 }
 
@@ -172,6 +185,16 @@ dynamicReconfigureCallback(ComplianceConfig& config, uint32_t level)
   tmp[4] = config.rot_y;
   tmp[5] = config.rot_z;
   m_stiffness = tmp.asDiagonal();
+
+  m_use_parallel_force_position_control = config.use_parallel_force_position_control;
+
+  tmp[0] = config.sel_x;
+  tmp[1] = config.sel_y;
+  tmp[2] = config.sel_z;
+  tmp[3] = config.sel_ax;
+  tmp[4] = config.sel_ay;
+  tmp[5] = config.sel_az;
+  m_selection_matrix = tmp.asDiagonal();
 }
 
 } // namespace
