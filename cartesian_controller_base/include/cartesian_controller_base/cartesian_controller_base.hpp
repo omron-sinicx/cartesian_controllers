@@ -66,11 +66,14 @@ CartesianControllerBase()
 template <class HardwareInterface>
 bool CartesianControllerBase<HardwareInterface>::
 init(HardwareInterface* hw, ros::NodeHandle& nh)
-{
+{ 
+
   if (m_already_initialized)
   {
     return true;
   }
+
+  m_nh = nh;
 
   // Load user specified inverse kinematics solver
   std::string ik_solver = "forward_dynamics"; // Default
@@ -90,7 +93,6 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
 
   std::string robot_description;
   urdf::Model robot_model;
-  KDL::Tree   robot_tree;
 
   // Get controller specific configuration
   if (!ros::param::search("robot_description", robot_description))
@@ -120,14 +122,14 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
     ROS_ERROR("Failed to parse urdf model from 'robot_description'");
     return false;
   }
-  if (!kdl_parser::treeFromUrdfModel(robot_model,robot_tree))
+  if (!kdl_parser::treeFromUrdfModel(robot_model,m_robot_tree))
   {
     const std::string error = ""
       "Failed to parse KDL tree from urdf model";
     ROS_ERROR_STREAM(error);
     throw std::runtime_error(error);
   }
-  if (!robot_tree.getChain(m_robot_base_link,m_end_effector_link,m_robot_chain))
+  if (!m_robot_tree.getChain(m_robot_base_link,m_end_effector_link,m_robot_chain))
   {
     const std::string error = ""
       "Failed to parse robot chain from urdf model. "
@@ -146,8 +148,8 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
   }
 
   // Parse joint limits
-  KDL::JntArray upper_pos_limits(m_joint_names.size());
-  KDL::JntArray lower_pos_limits(m_joint_names.size());
+  m_upper_pos_limits = KDL::JntArray(m_joint_names.size());
+  m_lower_pos_limits = KDL::JntArray(m_joint_names.size());
   for (size_t i = 0; i < m_joint_names.size(); ++i)
   {
     if (!robot_model.getJoint(m_joint_names[i]))
@@ -159,14 +161,14 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
     }
     if (robot_model.getJoint(m_joint_names[i])->type == urdf::Joint::CONTINUOUS)
     {
-      upper_pos_limits(i) = std::nan("0");
-      lower_pos_limits(i) = std::nan("0");
+      m_upper_pos_limits(i) = std::nan("0");
+      m_lower_pos_limits(i) = std::nan("0");
     }
     else
     {
       // Non-existent urdf limits are zero initialized
-      upper_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->upper;
-      lower_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->lower;
+      m_upper_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->upper;
+      m_lower_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->lower;
     }
   }
 
@@ -177,7 +179,7 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
   }
 
   // Initialize solvers
-  m_ik_solver->init(nh, m_robot_chain,upper_pos_limits,lower_pos_limits);
+  m_ik_solver->init(nh, m_robot_chain, m_upper_pos_limits, m_lower_pos_limits);
   KDL::Tree tmp("not_relevant");
   tmp.addChain(m_robot_chain,"not_relevant");
   m_forward_kinematics_solver.reset(new KDL::TreeFkSolverPos_recursive(tmp));
@@ -197,15 +199,26 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
   // Connect dynamic reconfigure and overwrite the default values with values
   // on the parameter server. This is done automatically if parameters with
   // the according names exist.
-  m_error_scale = 1.0;
-  m_iterations = 1;
+  
   m_callback_type = std::bind(
       &CartesianControllerBase<HardwareInterface>::dynamicReconfigureCallback, this, std::placeholders::_1, std::placeholders::_2);
 
   m_dyn_conf_server.reset(
       new dynamic_reconfigure::Server<ControllerConfig>(
-        ros::NodeHandle(nh.getNamespace() + "/solver")));
+        ros::NodeHandle(nh.getNamespace())));
   m_dyn_conf_server->setCallback(m_callback_type);
+  
+  
+  m_error_scale = 1.0;
+  m_iterations = 1;
+  m_solver_callback_type = std::bind(
+      &CartesianControllerBase<HardwareInterface>::dynamicReconfigureSolverCallback, this, std::placeholders::_1, std::placeholders::_2);
+
+  m_solver_dyn_conf_server.reset(
+      new dynamic_reconfigure::Server<SolverConfig>(
+        ros::NodeHandle(nh.getNamespace() + "/solver")));
+  m_solver_dyn_conf_server->setCallback(m_solver_callback_type);
+  
 
   m_already_initialized = true;
 
@@ -376,6 +389,35 @@ publishStateFeedback()
 template <class HardwareInterface>
 void CartesianControllerBase<HardwareInterface>::
 dynamicReconfigureCallback(ControllerConfig& config, uint32_t level)
+{
+  if (m_end_effector_link == config.end_effector_link)
+    return;
+
+  KDL::Chain robot_chain;
+
+  if (!m_robot_tree.getChain(m_robot_base_link, config.end_effector_link, robot_chain))
+  {
+    const std::string error = ""
+      "Failed to parse robot chain from urdf model. "
+      "Are you sure that both 'robot_base_link' and 'end_effector_link' exist?"
+      "Ignoring update.";
+    ROS_ERROR_STREAM(error);
+    return;
+  }
+
+  m_robot_chain = robot_chain;
+  m_end_effector_link = config.end_effector_link;
+
+  // Initialize solvers
+  m_ik_solver->init(m_nh, m_robot_chain, m_upper_pos_limits, m_lower_pos_limits);
+  KDL::Tree tmp("not_relevant");
+  tmp.addChain(m_robot_chain,"not_relevant");
+  m_forward_kinematics_solver.reset(new KDL::TreeFkSolverPos_recursive(tmp));
+}
+
+template <class HardwareInterface>
+void CartesianControllerBase<HardwareInterface>::
+dynamicReconfigureSolverCallback(SolverConfig& config, uint32_t level)
 {
   m_error_scale = config.error_scale;
   m_iterations = config.iterations;

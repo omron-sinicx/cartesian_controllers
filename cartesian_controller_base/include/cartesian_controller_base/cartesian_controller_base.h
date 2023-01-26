@@ -63,6 +63,7 @@
 // Dynamic reconfigure
 #include <dynamic_reconfigure/server.h>
 #include <cartesian_controller_base/CartesianControllerConfig.h>
+#include <cartesian_controller_base/SolverConfig.h>
 
 // Pluginlib
 #include <pluginlib/class_loader.h>
@@ -202,20 +203,29 @@ class CartesianControllerBase : public controller_interface::Controller<Hardware
   private:
     std::vector<std::string>                          m_joint_names;
     trajectory_msgs::JointTrajectoryPoint             m_simulated_joint_motion;
-    SpatialPDController                              m_spatial_controller;
+    SpatialPDController                               m_spatial_controller;
     ctrl::Vector6D                                    m_cartesian_input;
     double m_error_scale;
 
+    KDL::Tree   m_robot_tree;
+    KDL::JntArray m_upper_pos_limits;
+    KDL::JntArray m_lower_pos_limits;
+
     // Against multi initialization in multi inheritance scenarios
     bool m_already_initialized;
+    ros::NodeHandle m_nh;
 
     // Dynamic reconfigure
     typedef cartesian_controller_base::CartesianControllerConfig ControllerConfig;
+    typedef cartesian_controller_base::SolverConfig SolverConfig;
 
     void dynamicReconfigureCallback(ControllerConfig& config, uint32_t level);
-
     std::shared_ptr<dynamic_reconfigure::Server<ControllerConfig> > m_dyn_conf_server;
     dynamic_reconfigure::Server<ControllerConfig>::CallbackType m_callback_type;
+    
+    void dynamicReconfigureSolverCallback(SolverConfig& config, uint32_t level);
+    std::shared_ptr<dynamic_reconfigure::Server<SolverConfig> > m_solver_dyn_conf_server;
+    dynamic_reconfigure::Server<SolverConfig>::CallbackType m_solver_callback_type;
 
     realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::PoseStamped>
       m_feedback_pose_publisher;
