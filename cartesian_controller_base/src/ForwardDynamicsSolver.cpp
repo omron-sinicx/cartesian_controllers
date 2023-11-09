@@ -108,6 +108,7 @@ namespace cartesian_controller_base{
                                        // Will cause exponential slow-down without input.
 
     // Make sure positions stay in allowed margins
+    applyJointVelocityLimits();
     applyJointLimits();
 
     // Apply results
@@ -134,9 +135,10 @@ namespace cartesian_controller_base{
   bool ForwardDynamicsSolver::init(ros::NodeHandle& nh,
                                    const KDL::Chain& chain,
                                    const KDL::JntArray& upper_pos_limits,
-                                   const KDL::JntArray& lower_pos_limits)
+                                   const KDL::JntArray& lower_pos_limits,
+                                   const KDL::JntArray& velocity_limits)
   {
-    IKSolver::init(nh, chain, upper_pos_limits, lower_pos_limits);
+    IKSolver::init(nh, chain, upper_pos_limits, lower_pos_limits, velocity_limits);
 
     if (!buildGenericModel())
     {

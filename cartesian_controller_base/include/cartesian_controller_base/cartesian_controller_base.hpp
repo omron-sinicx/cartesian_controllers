@@ -150,6 +150,8 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
   // Parse joint limits
   m_upper_pos_limits = KDL::JntArray(m_joint_names.size());
   m_lower_pos_limits = KDL::JntArray(m_joint_names.size());
+  m_velocity_limits = KDL::JntArray(m_joint_names.size());
+
   for (size_t i = 0; i < m_joint_names.size(); ++i)
   {
     if (!robot_model.getJoint(m_joint_names[i]))
@@ -170,6 +172,8 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
       m_upper_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->upper;
       m_lower_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->lower;
     }
+
+    m_velocity_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->velocity;
   }
 
   // Get the joint handles to use in the control loop
@@ -179,7 +183,7 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
   }
 
   // Initialize solvers
-  m_ik_solver->init(nh, m_robot_chain, m_upper_pos_limits, m_lower_pos_limits);
+  m_ik_solver->init(nh, m_robot_chain, m_upper_pos_limits, m_lower_pos_limits, m_velocity_limits);
   KDL::Tree tmp("not_relevant");
   tmp.addChain(m_robot_chain,"not_relevant");
   m_forward_kinematics_solver.reset(new KDL::TreeFkSolverPos_recursive(tmp));
@@ -281,6 +285,8 @@ computeJointControlCmds(const ctrl::Vector6D& error, const ros::Duration& period
   m_simulated_joint_motion = m_ik_solver->getJointControlCmds(
       period,
       m_cartesian_input);
+
+  // Enforce joint velocity limits
 
   m_ik_solver->updateKinematics();
 }
@@ -409,7 +415,7 @@ dynamicReconfigureCallback(ControllerConfig& config, uint32_t level)
   m_end_effector_link = config.end_effector_link;
 
   // Initialize solvers
-  m_ik_solver->init(m_nh, m_robot_chain, m_upper_pos_limits, m_lower_pos_limits);
+  m_ik_solver->init(m_nh, m_robot_chain, m_upper_pos_limits, m_lower_pos_limits, m_velocity_limits);
   KDL::Tree tmp("not_relevant");
   tmp.addChain(m_robot_chain,"not_relevant");
   m_forward_kinematics_solver.reset(new KDL::TreeFkSolverPos_recursive(tmp));

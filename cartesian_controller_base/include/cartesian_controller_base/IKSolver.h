@@ -149,7 +149,8 @@ class IKSolver
     virtual bool init(ros::NodeHandle& nh,
                       const KDL::Chain& chain,
                       const KDL::JntArray& upper_pos_limits,
-                      const KDL::JntArray& lower_pos_limits);
+                      const KDL::JntArray& lower_pos_limits,
+                      const KDL::JntArray& velocity_limits);
 
     /**
      * @brief Update the robot kinematics of the solver
@@ -171,6 +172,11 @@ class IKSolver
      */
     void applyJointLimits();
 
+    /**
+     * @brief Make sure joint velocities stay in allowed margins
+     */
+    void applyJointVelocityLimits();
+
     //! The underlying physical system
     KDL::Chain m_chain;
 
@@ -187,6 +193,7 @@ class IKSolver
     // Joint limits
     KDL::JntArray m_upper_pos_limits;
     KDL::JntArray m_lower_pos_limits;
+    KDL::JntArray m_velocity_limits;
 
     // Forward kinematics
     std::shared_ptr<

@@ -210,6 +210,7 @@ class CartesianControllerBase : public controller_interface::Controller<Hardware
     KDL::Tree   m_robot_tree;
     KDL::JntArray m_upper_pos_limits;
     KDL::JntArray m_lower_pos_limits;
+    KDL::JntArray m_velocity_limits;
 
     // Against multi initialization in multi inheritance scenarios
     bool m_already_initialized;
