@@ -120,7 +120,7 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
       &CartesianForceController::dynamicReconfigureCallback, this, std::placeholders::_1, std::placeholders::_2);
 
   m_dyn_conf_server.reset(
-      new dynamic_reconfigure::Server<Config>(nh));
+      new dynamic_reconfigure::Server<Config>(ros::NodeHandle(nh.getNamespace() + "/force")));
 
   m_dyn_conf_server->setCallback(m_callback_type);
 
