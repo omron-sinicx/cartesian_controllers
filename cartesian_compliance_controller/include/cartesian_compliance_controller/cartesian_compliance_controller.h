@@ -102,6 +102,8 @@ class CartesianComplianceController
     ctrl::Vector6D        computeComplianceError();
 
     ctrl::Matrix6D        m_stiffness;
+    ctrl::Matrix6D        m_selection_matrix;
+    bool                  m_use_parallel_force_position_control;
     std::string           m_compliance_ref_link;
 
     // Dynamic reconfigure for stiffness
