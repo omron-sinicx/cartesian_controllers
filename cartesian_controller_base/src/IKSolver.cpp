@@ -108,7 +108,9 @@ namespace cartesian_controller_base{
   bool IKSolver::init(ros::NodeHandle& nh,
                       const KDL::Chain& chain,
                       const KDL::JntArray& upper_pos_limits,
-                      const KDL::JntArray& lower_pos_limits)
+                      const KDL::JntArray& lower_pos_limits,
+                      const KDL::JntArray& velocity_limits
+                      )
   {
     // Initialize
     m_chain = chain;
@@ -120,6 +122,7 @@ namespace cartesian_controller_base{
     m_last_velocities.data       = ctrl::VectorND::Zero(m_number_joints);
     m_upper_pos_limits           = upper_pos_limits;
     m_lower_pos_limits           = lower_pos_limits;
+    m_velocity_limits            = velocity_limits;
 
     // Forward kinematics
     m_fk_pos_solver.reset(new KDL::ChainFkSolverPos_recursive(m_chain));
@@ -142,6 +145,30 @@ namespace cartesian_controller_base{
     m_end_effector_vel[3] = vel.deriv().rot.x();
     m_end_effector_vel[4] = vel.deriv().rot.y();
     m_end_effector_vel[5] = vel.deriv().rot.z();
+  }
+
+  void IKSolver::applyJointVelocityLimits()
+  {
+    double velocity_scaling_factor{1.0};
+
+    for (int i = 0; i < m_number_joints; ++i)
+    {
+      // limit is 0.0 if not defined, so skip it
+      if (m_velocity_limits(i) == 0)
+        continue;
+
+      const double &unbounded_velocity = m_current_velocities(i);
+
+      // Clamp each joint velocity to a joint specific limit.
+      const double bounded_velocity = std::clamp(m_current_velocities(i), -m_velocity_limits(i), m_velocity_limits(i));
+      velocity_scaling_factor = std::min(velocity_scaling_factor, bounded_velocity / m_current_velocities(i));
+    }
+
+    if (velocity_scaling_factor < 1.0)
+      ROS_WARN_STREAM_THROTTLE(1, "Scaling down joint velocities by a factor of " << velocity_scaling_factor);
+
+    // Scale velocities
+    m_current_velocities.data *= velocity_scaling_factor;
   }
 
   void IKSolver::applyJointLimits()

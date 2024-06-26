@@ -99,7 +99,8 @@ class SelectivelyDampedLeastSquaresSolver : public IKSolver
     bool init(ros::NodeHandle& nh,
               const KDL::Chain& chain,
               const KDL::JntArray& upper_pos_limits,
-              const KDL::JntArray& lower_pos_limits);
+              const KDL::JntArray& lower_pos_limits,
+              const KDL::JntArray& velocity_limits);
 
   private:
     /**
