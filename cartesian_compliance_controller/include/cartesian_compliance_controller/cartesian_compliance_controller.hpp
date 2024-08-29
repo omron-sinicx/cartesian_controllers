@@ -151,6 +151,10 @@ ctrl::Vector6D CartesianComplianceController<HardwareInterface>::
 computeComplianceError()
 {
   ctrl::Vector6D net_force;
+  ctrl::Vector6D pose_error, pose_error_sel;
+  ctrl::Vector6D ft_error, ft_error_sel;
+  ctrl::Matrix3D eef_to_base;
+
   if (!m_use_parallel_force_position_control)
     net_force =
 
@@ -161,17 +165,79 @@ computeComplianceError()
       + ForceBase::computeForceError();
   else // Add a selection matrix to allow finer control of which control to use for each 
   {
-    net_force =
 
-      // Position controller: PID gains scale by m_stiffness
-      m_selection_matrix * Base::displayInBaseLink(m_stiffness,m_compliance_ref_link) * MotionBase::computeMotionError()
+    // TODO add branches for cases
+    // CASE A: use selection matrix given in gripper frame
 
-      // Sensor and target force in base orientation
-      + ((ctrl::Matrix6D::Identity() - m_selection_matrix) * ForceBase::computeForceError());
+    // get error in base frame
+    pose_error = MotionBase::computeMotionError();
+    ft_error = ForceBase::computeForceError();
+   
+
+    // transformation of gripper in base frame
+    KDL::Frame transform_kdl;
+    Base::m_forward_kinematics_solver->JntToCart(Base::m_ik_solver->getPositions(), transform_kdl, m_compliance_ref_link);
+    // Adjust format from kdl to matrix3d
+    eef_to_base <<
+        transform_kdl.M.data[0],
+        transform_kdl.M.data[1],
+        transform_kdl.M.data[2],
+        transform_kdl.M.data[3],
+        transform_kdl.M.data[4],
+        transform_kdl.M.data[5],
+        transform_kdl.M.data[6],
+        transform_kdl.M.data[7],
+        transform_kdl.M.data[8];
+  
+
+    // changing the error such that the selection matrix from the gripper frame is applied in gripper frame
+    apply_selection_matrix_gripper_frame(pose_error, ft_error, &pose_error_sel, &ft_error_sel, m_selection_matrix, eef_to_base);
+    
+    // stiffness scaling
+    net_force = m_stiffness * pose_error_sel + ft_error_sel;
+    
+    // CASE B: use selection matrix given in base frame
+    // net_force =
+
+    //   // Position controller: PID gains scale by m_stiffness
+    //   m_selection_matrix * Base::displayInBaseLink(m_stiffness,m_compliance_ref_link) * MotionBase::computeMotionError()
+
+    //   // Sensor and target force in base orientation
+    //   + ((ctrl::Matrix6D::Identity() - m_selection_matrix) * ForceBase::computeForceError());
   }
   
   return net_force;
 }
+
+// helper function for transforming
+
+template <class HardwareInterface>
+void CartesianComplianceController<HardwareInterface>::
+apply_selection_matrix_gripper_frame(ctrl::Vector6D pos_error_ref, ctrl::Vector6D force_error_ref, ctrl::Vector6D *pos_error_sel, ctrl::Vector6D *force_error_sel, ctrl::Matrix6D selection_matrix_gripper, ctrl::Matrix3D R_gripper_to_ref)
+{
+    // Convert errors from reference frame to gripper frame
+    ctrl::Matrix6D bigR = ctrl::Matrix6D::Zero(6,6);
+    bigR.topLeftCorner(3,3)    = R_gripper_to_ref;
+    bigR.bottomRightCorner(3,3) = R_gripper_to_ref;
+
+    ctrl::Matrix6D invBigR = ctrl::Matrix6D::Zero(6,6);
+    invBigR.topLeftCorner(3,3)    = R_gripper_to_ref.transpose();
+    invBigR.bottomRightCorner(3,3) = R_gripper_to_ref.transpose();
+
+    ctrl::Vector6D pose_error_gripper = invBigR * pos_error_ref;  // transpose,not inv since its just rotation, without translation
+    ctrl::Vector6D ft_error_gripper   = invBigR * force_error_ref;
+  
+    // Apply selection matrix in gripper frame
+    ctrl::Vector6D selected_pose_error_gripper = selection_matrix_gripper * pose_error_gripper;
+    ctrl::Vector6D selected_ft_error_gripper = (ctrl::Matrix6D::Identity() - selection_matrix_gripper) * ft_error_gripper;
+
+    // Convert selected errors back to reference frame
+    *pos_error_sel = bigR * selected_pose_error_gripper;
+    *force_error_sel = bigR * selected_ft_error_gripper;
+
+ }
+
+
 
 template <class HardwareInterface>
 void CartesianComplianceController<HardwareInterface>::

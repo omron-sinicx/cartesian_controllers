@@ -89,6 +89,14 @@ class CartesianComplianceController
 
     void update(const ros::Time& time, const ros::Duration& period);
 
+    void apply_selection_matrix_gripper_frame(ctrl::Vector6D pos_error_ref,
+                                              ctrl::Vector6D force_error_ref,
+                                              ctrl::Vector6D *pos_error_sel,
+                                              ctrl::Vector6D *force_error_sel,
+                                              ctrl::Matrix6D selection_matrix_gripper,
+                                              ctrl::Matrix3D R_gripper_to_ref);
+
+
     typedef cartesian_controller_base::CartesianControllerBase<HardwareInterface> Base;
     typedef cartesian_motion_controller::CartesianMotionController<HardwareInterface> MotionBase;
     typedef cartesian_force_controller::CartesianForceController<HardwareInterface> ForceBase;
