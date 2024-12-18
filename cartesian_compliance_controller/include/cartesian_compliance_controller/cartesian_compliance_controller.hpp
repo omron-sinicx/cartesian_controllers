@@ -150,6 +150,10 @@ template <class HardwareInterface>
 ctrl::Vector6D CartesianComplianceController<HardwareInterface>::
 computeComplianceError()
 {
+  std::cout << "m_selection_matrix: " << std::endl << m_selection_matrix << std::endl;
+  bool powder_grounding = true;
+  // bool powder_grounding = false;
+
   ctrl::Vector6D net_force;
   if (!m_use_parallel_force_position_control)
     net_force =
@@ -159,7 +163,77 @@ computeComplianceError()
 
       // Sensor and target force in base orientation
       + ForceBase::computeForceError();
-  else // Add a selection matrix to allow finer control of which control to use for each 
+  else if (powder_grounding) {
+    auto pose = Base::m_ik_solver->getEndEffectorPose();
+    std::cout << "xyz: " << pose.p.x() << ", " << pose.p.y() << ", " << pose.p.z() << std::endl;
+    ctrl::Vector3D ee_pos;
+    ee_pos << pose.p.x(), pose.p.y(), pose.p.z();
+    std::cout<<"ee_pos:"<<std::endl<<ee_pos<<std::endl;
+    ctrl::Vector3D center;
+    center << 0.0, 0.5, 0.04;
+    std::cout<<"center:"<<std::endl<<center<<std::endl;
+    ctrl::Vector3D normal_vec;
+    normal_vec = (ee_pos - center).normalized();
+    std::cout<<"normal_vec:"<<std::endl<<normal_vec<<std::endl;
+    ctrl::Vector3D x_basis;
+    x_basis << 1.0, 0.0, 0.0;
+    ctrl::Vector3D u_x = x_basis - x_basis.dot(normal_vec) * normal_vec;
+    std::cout<<"u_x:"<<std::endl<<u_x<<std::endl;
+    u_x.normalize();
+    ctrl::Vector3D y_basis;
+    y_basis << 0.0, 1.0, 0.0;
+    ctrl::Vector3D u_y = y_basis - y_basis.dot(normal_vec) * normal_vec - y_basis.dot(u_x) * u_x;
+    u_y.normalize();
+    std::cout << "u_y:" << std::endl << u_y << std::endl;
+    ctrl::Matrix3D R_base2surface;
+    R_base2surface << u_x(0), u_y(0), normal_vec(0),
+                      u_x(1), u_y(1), normal_vec(1),
+                      u_x(2), u_y(2), normal_vec(2);
+    std::cout << "R_base2surface:" << std::endl << R_base2surface << std::endl;
+    ctrl::Matrix3D R_check = R_base2surface * R_base2surface.transpose();
+    std::cout << "R_check:" << std::endl << R_check << std::endl;
+    ctrl::Matrix3D px;
+    px <<           0, -pose.p.z(),  pose.p.y(),
+           pose.p.z(),           0, -pose.p.x(),
+          -pose.p.y(),  pose.p.x(),           0;
+    std::cout << "px:" << std::endl << px << std::endl;
+    ctrl::Matrix3D pxR;
+    pxR = px * R_base2surface;
+    std::cout << "pxR:" << std::endl << pxR << std::endl;
+    ctrl::Matrix6D Adjoint_T;
+    Adjoint_T << R_base2surface, ctrl::Matrix3D::Zero(3, 3),
+                            pxR,             R_base2surface;
+    std::cout << "Adjoint_T:" << std::endl << Adjoint_T << std::endl;
+    ctrl::Matrix6D Adjoint_T_inv;
+    ctrl::Matrix3D R_base2surface_T = R_base2surface.transpose();
+    Adjoint_T_inv << R_base2surface_T, ctrl::Matrix3D::Zero(3, 3),
+                      pxR.transpose(),             R_base2surface;
+    std::cout << "Adjoint_T_inv:" << std::endl << Adjoint_T_inv << std::endl;
+    ctrl::Matrix6D Adjoint_T_inv_check;
+    Adjoint_T_inv_check = Adjoint_T * Adjoint_T_inv;
+    std::cout << "Adjoint_T_inv_check:" << std::endl << Adjoint_T_inv_check << std::endl;
+
+    ctrl::Matrix6D m_selection_matrix_pd = Adjoint_T_inv * m_selection_matrix * Adjoint_T;
+    std::cout << "m_selection_matrix_pd: " << std::endl << m_selection_matrix_pd << std::endl;
+
+    // ctrl::Matrix6D m_selection_matrix_pd_check;
+    // m_selection_matrix_pd_check =
+    //     m_selection_matrix_pd +
+    //     (ctrl::Matrix6D::Identity() - m_selection_matrix_pd);
+    // std::cout << "m_selection_matrix_pd_check: " << std::endl << m_selection_matrix_pd_check << std::endl;
+
+    net_force =
+
+        // Position controller: PID gains scale by m_stiffness
+        m_selection_matrix_pd *
+            Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) *
+            MotionBase::computeMotionError()
+
+        // Sensor and target force in base orientation
+        + ((ctrl::Matrix6D::Identity() - m_selection_matrix_pd) *
+          ForceBase::computeForceError());
+  }
+  else // Add a selection matrix to allow finer control of which control to use for each
   {
     net_force =
 
@@ -169,7 +243,8 @@ computeComplianceError()
       // Sensor and target force in base orientation
       + ((ctrl::Matrix6D::Identity() - m_selection_matrix) * ForceBase::computeForceError());
   }
-  
+
+
   return net_force;
 }
 

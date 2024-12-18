@@ -66,7 +66,7 @@ CartesianControllerBase()
 template <class HardwareInterface>
 bool CartesianControllerBase<HardwareInterface>::
 init(HardwareInterface* hw, ros::NodeHandle& nh)
-{ 
+{
 
   if (m_already_initialized)
   {
@@ -203,7 +203,7 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
   // Connect dynamic reconfigure and overwrite the default values with values
   // on the parameter server. This is done automatically if parameters with
   // the according names exist.
-  
+
   m_callback_type = std::bind(
       &CartesianControllerBase<HardwareInterface>::dynamicReconfigureCallback, this, std::placeholders::_1, std::placeholders::_2);
 
@@ -211,8 +211,8 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
       new dynamic_reconfigure::Server<ControllerConfig>(
         ros::NodeHandle(nh.getNamespace())));
   m_dyn_conf_server->setCallback(m_callback_type);
-  
-  
+
+
   m_error_scale = 1.0;
   m_iterations = 1;
   m_solver_callback_type = std::bind(
@@ -222,7 +222,7 @@ init(HardwareInterface* hw, ros::NodeHandle& nh)
       new dynamic_reconfigure::Server<SolverConfig>(
         ros::NodeHandle(nh.getNamespace() + "/solver")));
   m_solver_dyn_conf_server->setCallback(m_solver_callback_type);
-  
+
 
   m_already_initialized = true;
 
