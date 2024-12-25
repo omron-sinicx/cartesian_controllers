@@ -170,10 +170,12 @@ computeComplianceError()
     ee_pos << pose.p.x(), pose.p.y(), pose.p.z();
     std::cout<<"ee_pos:"<<std::endl<<ee_pos<<std::endl;
     ctrl::Vector3D center;
-    center << 0.0, 0.5, 0.04;
+    // center << 0.0, 0.5, 0.04;
+    center << 0.0, 0.5, 0.081;
     std::cout<<"center:"<<std::endl<<center<<std::endl;
     ctrl::Vector3D normal_vec;
     normal_vec = (ee_pos - center).normalized();
+    // normal_vec = (center - ee_pos).normalized();
     std::cout<<"normal_vec:"<<std::endl<<normal_vec<<std::endl;
     ctrl::Vector3D x_basis;
     x_basis << 1.0, 0.0, 0.0;
@@ -190,8 +192,10 @@ computeComplianceError()
                       u_x(1), u_y(1), normal_vec(1),
                       u_x(2), u_y(2), normal_vec(2);
     std::cout << "R_base2surface:" << std::endl << R_base2surface << std::endl;
-    ctrl::Matrix3D R_check = R_base2surface * R_base2surface.transpose();
-    std::cout << "R_check:" << std::endl << R_check << std::endl;
+    // ctrl::Matrix3D R_check = R_base2surface * R_base2surface.transpose();
+    // std::cout << "R_check:" << std::endl << R_check << std::endl;
+    double R_det = R_base2surface.determinant();
+    std::cout << "R_det:" << std::endl << R_det << std::endl;
     ctrl::Matrix3D px;
     px <<           0, -pose.p.z(),  pose.p.y(),
            pose.p.z(),           0, -pose.p.x(),
