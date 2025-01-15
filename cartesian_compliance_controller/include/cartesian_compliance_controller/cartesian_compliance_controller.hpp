@@ -145,8 +145,8 @@ ctrl::Vector6D
 CartesianComplianceController<HardwareInterface>::computeComplianceError() {
   std::cout << "m_selection_matrix: " << std::endl
             << m_selection_matrix << std::endl;
-  bool powder_grounding = true;
-  // bool powder_grounding = false;
+  bool powder_grounding_flag = true;
+  // bool powder_grounding_flag = false;
 
   ctrl::Vector6D net_force;
   if (!m_use_parallel_force_position_control)
@@ -158,7 +158,7 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
 
         // Sensor and target force in base orientation
         + ForceBase::computeForceError();
-  else if (powder_grounding) {
+  else if (powder_grounding_flag) {
     auto pose = Base::m_ik_solver->getEndEffectorPose();
     std::cout << "xyz: " << pose.p.x() << ", " << pose.p.y() << ", "
               << pose.p.z() << std::endl;
@@ -210,9 +210,9 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
     ctrl::Matrix6D Adjoint_T_inv;
     ctrl::Matrix3D R_base2surface_T = R_base2surface.transpose();
     // Adjoint_T_inv << R_base2surface_T, ctrl::Matrix3D::Zero(3, 3),
-    //                   pxR.transpose(),             R_base2surface;
+    //                   pxR.transpose(),             R_base2surface_T;
     Adjoint_T_inv << R_base2surface_T, ctrl::Matrix3D::Zero(3, 3),
-        ctrl::Matrix3D::Zero(3, 3), R_base2surface;
+        ctrl::Matrix3D::Zero(3, 3), R_base2surface_T;
     std::cout << "Adjoint_T_inv:" << std::endl << Adjoint_T_inv << std::endl;
     ctrl::Matrix6D Adjoint_T_inv_check;
     Adjoint_T_inv_check = Adjoint_T * Adjoint_T_inv;
