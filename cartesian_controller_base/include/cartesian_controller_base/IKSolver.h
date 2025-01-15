@@ -122,6 +122,10 @@ class IKSolver
      */
     const KDL::JntArray& getPositions() const;
 
+    const KDL::JntArray& getVelocity() const;
+
+    const KDL::Chain getChain() const;
+
     //! Set initial joint configuration
     bool setStartState(const std::vector<hardware_interface::JointHandle>& joint_handles);
 
