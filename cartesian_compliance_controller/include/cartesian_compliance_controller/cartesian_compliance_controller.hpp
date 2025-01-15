@@ -97,6 +97,10 @@ bool CartesianComplianceController<HardwareInterface>::init(
       ros::NodeHandle(nh.getNamespace() + "/stiffness")));
   m_dyn_conf_server->setCallback(m_callback_type);
 
+  // KDL::Chain chain = Base::m_ik_solver->getChain();
+  m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(Base::m_ik_solver->getChain()));
+  m_jnt_space_inertia_solver.reset(new KDL::ChainDynParam(Base::m_ik_solver->getChain(),KDL::Vector::Zero()));
+
   return true;
 }
 
@@ -195,7 +199,8 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
     double R_det = R_base2surface.determinant();
     std::cout << "R_det:" << std::endl << R_det << std::endl;
     // ctrl::Matrix3D px;
-    // px << 0, -pose.p.z(), pose.p.y(), pose.p.z(), 0, -pose.p.x(), -pose.p.y(),
+    // px << 0, -pose.p.z(), pose.p.y(), pose.p.z(), 0, -pose.p.x(),
+    // -pose.p.y(),
     //     pose.p.x(), 0;
     // std::cout << "px:" << std::endl << px << std::endl;
     // ctrl::Matrix3D pxR;
@@ -230,6 +235,20 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
     //     (ctrl::Matrix6D::Identity() - m_selection_matrix_pd);
     // std::cout << "m_selection_matrix_pd_check: " << std::endl <<
     // m_selection_matrix_pd_check << std::endl;
+    auto current_positions = Base::m_ik_solver->getPositions();
+    auto current_velocity = Base::m_ik_solver->getVelocity();
+    // auto jacobian = Base::m_forward_kinematics_solver->m_jnt_jacobian.data;
+    // auto jacobian = Base::m_forward_kinematics_solver;
+    // Base::m_jnt_space_inertia.data;
+    KDL::JntSpaceInertiaMatrix jnt_space_inertia;
+    m_jnt_space_inertia_solver->JntToMass(current_positions,
+                                          jnt_space_inertia);
+    // std::cout << "jnt_space_inertia: " << std::endl
+    // std::cout << jnt_space_inertia << std::endl;
+    KDL::Jacobian jnt_jacobian;
+    m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
+    // std::cout << "jnt_jacobian: " << std::endl
+    // std::cout << jnt_jacobian << std::endl;
 
     net_force =
 

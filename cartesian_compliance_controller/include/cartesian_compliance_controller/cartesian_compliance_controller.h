@@ -49,6 +49,15 @@
 #include <dynamic_reconfigure/server.h>
 #include <cartesian_compliance_controller/ComplianceControllerConfig.h>
 
+// KDL
+#include <kdl/frames.hpp>
+#include <kdl/chain.hpp>
+#include <kdl/jacobian.hpp>
+#include <kdl/chainjnttojacsolver.hpp>
+#include <kdl/chaindynparam.hpp>
+#include <kdl/chainfksolverpos_recursive.hpp>
+#include <kdl/chainfksolvervel_recursive.hpp>
+
 namespace cartesian_compliance_controller
 {
 
@@ -114,6 +123,9 @@ class CartesianComplianceController
 
     std::shared_ptr<dynamic_reconfigure::Server<ComplianceConfig> > m_dyn_conf_server;
     dynamic_reconfigure::Server<ComplianceConfig>::CallbackType m_callback_type;
+
+    std::shared_ptr<KDL::ChainJntToJacSolver> m_jnt_jacobian_solver;
+    std::shared_ptr<KDL::ChainDynParam>       m_jnt_space_inertia_solver;
 };
 
 }

@@ -77,6 +77,15 @@ namespace cartesian_controller_base{
     return m_current_positions;
   }
 
+  const KDL::JntArray& IKSolver::getVelocity() const
+  {
+    return m_current_velocities;
+  }
+
+  const KDL::Chain IKSolver::getChain() const
+  {
+    return m_chain;
+  }
 
   bool IKSolver::setStartState(
       const std::vector<hardware_interface::JointHandle>& joint_handles)
