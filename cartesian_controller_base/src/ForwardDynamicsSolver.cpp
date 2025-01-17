@@ -41,20 +41,20 @@
 #include <cartesian_controller_base/ForwardDynamicsSolver.h>
 
 // other
-#include <map>
-#include <sstream>
 #include <eigen_conversions/eigen_kdl.h>
 
+#include <map>
+#include <sstream>
+
 // KDL
-#include <kdl/jntarrayvel.hpp>
 #include <kdl/framevel.hpp>
+#include <kdl/jntarrayvel.hpp>
 
 // Pluginlib
 #include <pluginlib/class_list_macros.h>
 
-
 /**
- * \class cartesian_controller_base::ForwardDynamicsSolver 
+ * \class cartesian_controller_base::ForwardDynamicsSolver
  *
  * Users may explicitly specify it with \a "forward_dynamics" as \a ik_solver
  * in their controllers.yaml configuration file for each controller:
@@ -72,150 +72,162 @@
  * \endcode
  *
  */
-PLUGINLIB_EXPORT_CLASS(cartesian_controller_base::ForwardDynamicsSolver, cartesian_controller_base::IKSolver)
+PLUGINLIB_EXPORT_CLASS(cartesian_controller_base::ForwardDynamicsSolver,
+                       cartesian_controller_base::IKSolver)
 
+namespace cartesian_controller_base {
 
+ForwardDynamicsSolver::ForwardDynamicsSolver() {}
 
+ForwardDynamicsSolver::~ForwardDynamicsSolver() {}
 
+trajectory_msgs::JointTrajectoryPoint
+ForwardDynamicsSolver::getJointControlCmds(ros::Duration period,
+                                           const ctrl::Vector6D& net_force) {
+  // Compute joint space inertia matrix with actualized link masses
+  buildGenericModel();
+  m_jnt_space_inertia_solver->JntToMass(m_current_positions,
+                                        m_jnt_space_inertia);
 
-namespace cartesian_controller_base{
+  // Compute joint jacobian
+  m_jnt_jacobian_solver->JntToJac(m_current_positions, m_jnt_jacobian);
 
-  ForwardDynamicsSolver::ForwardDynamicsSolver()
-  {
+  // Compute joint accelerations according to: \f$ \ddot{q} = H^{-1} ( J^T f)
+  // \f$
+  m_current_accelerations.data = m_jnt_space_inertia.data.inverse() *
+                                 m_jnt_jacobian.data.transpose() * net_force;
+
+  // Numerical time integration with the Euler forward method
+  m_current_positions.data =
+      m_last_positions.data + m_last_velocities.data * period.toSec();
+  m_current_velocities.data =
+      m_last_velocities.data + m_current_accelerations.data * period.toSec();
+  m_current_velocities.data *=
+      0.9;  // 10 % global damping against unwanted null space motion.
+            // Will cause exponential slow-down without input.
+
+  // Make sure positions stay in allowed margins
+  applyJointVelocityLimits();
+  applyJointLimits();
+
+  // Apply results
+  trajectory_msgs::JointTrajectoryPoint control_cmd;
+  for (int i = 0; i < m_number_joints; ++i) {
+    control_cmd.positions.push_back(m_current_positions(i));
+    control_cmd.velocities.push_back(m_current_velocities(i));
+
+    // Accelerations should be left empty. Those values will be interpreted
+    // by most hardware joint drivers as max. tolerated values. As a
+    // consequence, the robot will move very slowly.
+  }
+  control_cmd.time_from_start = period;  // valid for this duration
+
+  // Update for the next cycle
+  m_last_positions = m_current_positions;
+  m_last_velocities = m_current_velocities;
+
+  return control_cmd;
+}
+
+bool ForwardDynamicsSolver::init(ros::NodeHandle& nh, const KDL::Chain& chain,
+                                 const KDL::JntArray& upper_pos_limits,
+                                 const KDL::JntArray& lower_pos_limits,
+                                 const KDL::JntArray& velocity_limits) {
+  IKSolver::init(nh, chain, upper_pos_limits, lower_pos_limits,
+                 velocity_limits);
+
+  if (!buildGenericModel()) {
+    ROS_ERROR(
+        "ForwardDynamicsSolver: Something went wrong in setting up the "
+        "internal model.");
+    return false;
   }
 
-  ForwardDynamicsSolver::~ForwardDynamicsSolver(){}
+  // Forward dynamics
+  m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(m_chain));
+  m_jnt_space_inertia_solver.reset(
+      new KDL::ChainDynParam(m_chain, KDL::Vector::Zero()));
+  m_jnt_jacobian.resize(m_number_joints);
+  m_jnt_space_inertia.resize(m_number_joints);
 
-  trajectory_msgs::JointTrajectoryPoint ForwardDynamicsSolver::getJointControlCmds(
-        ros::Duration period,
-        const ctrl::Vector6D& net_force)
-  {
+  // Connect dynamic reconfigure and overwrite the default values with values
+  // on the parameter server. This is done automatically if parameters with
+  // the according names exist.
+  m_callback_type =
+      std::bind(&ForwardDynamicsSolver::dynamicReconfigureCallback, this,
+                std::placeholders::_1, std::placeholders::_2);
 
-    // Compute joint space inertia matrix with actualized link masses
-    buildGenericModel();
-    m_jnt_space_inertia_solver->JntToMass(m_current_positions,m_jnt_space_inertia);
+  m_dyn_conf_server.reset(new dynamic_reconfigure::Server<IKConfig>(
+      ros::NodeHandle(nh.getNamespace() + "/solver/forward_dynamics")));
 
-    // Compute joint jacobian
-    m_jnt_jacobian_solver->JntToJac(m_current_positions,m_jnt_jacobian);
+  m_dyn_conf_server->setCallback(m_callback_type);
 
-    // Compute joint accelerations according to: \f$ \ddot{q} = H^{-1} ( J^T f) \f$
-    m_current_accelerations.data = m_jnt_space_inertia.data.inverse() * m_jnt_jacobian.data.transpose() * net_force;
+  ROS_INFO("Forward dynamics solver initialized");
+  ROS_INFO("Forward dynamics solver has control over %i joints",
+           m_number_joints);
 
-    // Numerical time integration with the Euler forward method
-    m_current_positions.data = m_last_positions.data + m_last_velocities.data * period.toSec();
-    m_current_velocities.data = m_last_velocities.data + m_current_accelerations.data * period.toSec();
-    m_current_velocities.data *= 0.9;  // 10 % global damping against unwanted null space motion.
-                                       // Will cause exponential slow-down without input.
+  return true;
+}
 
-    // Make sure positions stay in allowed margins
-    applyJointVelocityLimits();
-    applyJointLimits();
-
-    // Apply results
-    trajectory_msgs::JointTrajectoryPoint control_cmd;
-    for (int i = 0; i < m_number_joints; ++i)
+bool ForwardDynamicsSolver::buildGenericModel() {
+  double mass[6] = {1.98, 3.4445, 1.437, 0.871, 0.805, 0.261};
+  double centor_of_mass[6][3] = {
+      {0.0, 0.0, -0.02}, {-0.11355, 0.0, 0.1157}, {-0.1632, 0.0, 0.0238},
+      {0.0, -0.01, 0.0}, {0.0, 0.01, 0.0},        {0.0, 0.0, -0.02},
+  };
+  double inertia_tensor[6][6] = {
+      // xx, yy, zz, xy, xz, yz
+      {0.008093166666666665, 0.008093166666666665, 0.005625, 0.0, 0.0, 0.0},
+      {0.021728491912499998, 0.021728491912499998, 0.00961875, 0.0, 0.0, 0.0},
+      {0.006544570199999999, 0.006544570199999999, 0.00354375, 0.0, 0.0, 0.0},
+      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
+      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
+      {0.00013626666666666665, 0.00013626666666666665, 0.0001792, 0.0, 0.0,
+       0.0},
+  };
+  // Set all masses and inertias to minimal (yet stable) values.
+  double ip_min = 0.000001;
+  for (size_t i = 0; i < m_chain.segments.size(); ++i) {
+    // Fixed joint segment
+    if (m_chain.segments[i].getJoint().getType() == KDL::Joint::None) {
+      m_chain.segments[i].setInertia(KDL::RigidBodyInertia::Zero());
+    } else  // relatively moving segment
     {
-      control_cmd.positions.push_back(m_current_positions(i));
-      control_cmd.velocities.push_back(m_current_velocities(i));
-
-      // Accelerations should be left empty. Those values will be interpreted
-      // by most hardware joint drivers as max. tolerated values. As a
-      // consequence, the robot will move very slowly.
+      m_chain.segments[i].setInertia(KDL::RigidBodyInertia(
+          // m_min,                          // mass
+          // KDL::Vector::Zero(),            // center of gravity
+          // KDL::RotationalInertia(ip_min,  // ixx
+          //                        ip_min,  // iyy
+          //                        ip_min   // izz
+          //                        // ixy, ixy, iyz default to 0.0
+          //                        )));
+          mass[i],  // mass
+          KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
+                      centor_of_mass[i][2]),            // center of gravity
+          KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
+                                 inertia_tensor[i][1],  // iyy
+                                 inertia_tensor[i][2],  // izz
+                                 inertia_tensor[i][3],  // ixy
+                                 inertia_tensor[i][4],  // ixz
+                                 inertia_tensor[i][5]   // iyz
+                                 )));
     }
-    control_cmd.time_from_start = period; // valid for this duration
-
-    // Update for the next cycle
-    m_last_positions = m_current_positions;
-    m_last_velocities = m_current_velocities;
-
-    return control_cmd;
   }
 
+  // Only give the last segment a generic mass and inertia.
+  // See https://arxiv.org/pdf/1908.06252.pdf for a motivation for this setting.
+  double m = 1;
+  double ip = 1;
+  m_chain.segments[m_chain.segments.size() - 1].setInertia(
+      KDL::RigidBodyInertia(m, KDL::Vector::Zero(),
+                            KDL::RotationalInertia(ip, ip, ip)));
 
-  bool ForwardDynamicsSolver::init(ros::NodeHandle& nh,
-                                   const KDL::Chain& chain,
-                                   const KDL::JntArray& upper_pos_limits,
-                                   const KDL::JntArray& lower_pos_limits,
-                                   const KDL::JntArray& velocity_limits)
-  {
-    IKSolver::init(nh, chain, upper_pos_limits, lower_pos_limits, velocity_limits);
+  return true;
+}
 
-    if (!buildGenericModel())
-    {
-      ROS_ERROR("ForwardDynamicsSolver: Something went wrong in setting up the internal model.");
-      return false;
-    }
+void ForwardDynamicsSolver::dynamicReconfigureCallback(IKConfig& config,
+                                                       uint32_t level) {
+  m_min = config.link_mass;
+}
 
-    // Forward dynamics
-    m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(m_chain));
-    m_jnt_space_inertia_solver.reset(new KDL::ChainDynParam(m_chain,KDL::Vector::Zero()));
-    m_jnt_jacobian.resize(m_number_joints);
-    m_jnt_space_inertia.resize(m_number_joints);
-
-    // Connect dynamic reconfigure and overwrite the default values with values
-    // on the parameter server. This is done automatically if parameters with
-    // the according names exist.
-    m_callback_type = std::bind(&ForwardDynamicsSolver::dynamicReconfigureCallback,
-                                this,
-                                std::placeholders::_1,
-                                std::placeholders::_2);
-
-    m_dyn_conf_server.reset(
-        new dynamic_reconfigure::Server<IKConfig>(
-          ros::NodeHandle(nh.getNamespace() + "/solver/forward_dynamics")));
-
-    m_dyn_conf_server->setCallback(m_callback_type);
-
-    ROS_INFO("Forward dynamics solver initialized");
-    ROS_INFO("Forward dynamics solver has control over %i joints", m_number_joints);
-
-    return true;
-  }
-
-  bool ForwardDynamicsSolver::buildGenericModel()
-  {
-    // Set all masses and inertias to minimal (yet stable) values.
-    double ip_min = 0.000001;
-    for (size_t i = 0; i < m_chain.segments.size(); ++i)
-    {
-      // Fixed joint segment
-      if (m_chain.segments[i].getJoint().getType() == KDL::Joint::None)
-      {
-        m_chain.segments[i].setInertia(
-            KDL::RigidBodyInertia::Zero());
-      }
-      else  // relatively moving segment
-      {
-        m_chain.segments[i].setInertia(
-            KDL::RigidBodyInertia(
-              m_min,                // mass
-              KDL::Vector::Zero(),  // center of gravity
-              KDL::RotationalInertia(
-                ip_min,             // ixx
-                ip_min,             // iyy
-                ip_min              // izz
-                // ixy, ixy, iyz default to 0.0
-                )));
-      }
-    }
-
-    // Only give the last segment a generic mass and inertia.
-    // See https://arxiv.org/pdf/1908.06252.pdf for a motivation for this setting.
-    double m = 1;
-    double ip = 1;
-    m_chain.segments[m_chain.segments.size()-1].setInertia(
-        KDL::RigidBodyInertia(
-          m,
-          KDL::Vector::Zero(),
-          KDL::RotationalInertia(ip, ip, ip)));
-
-    return true;
-  }
-
-  void ForwardDynamicsSolver::dynamicReconfigureCallback(IKConfig& config, uint32_t level)
-  {
-    m_min = config.link_mass;
-  }
-
-
-} // namespace
+}  // namespace cartesian_controller_base
