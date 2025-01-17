@@ -237,18 +237,15 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
     // m_selection_matrix_pd_check << std::endl;
     auto current_positions = Base::m_ik_solver->getPositions();
     auto current_velocity = Base::m_ik_solver->getVelocity();
-    // auto jacobian = Base::m_forward_kinematics_solver->m_jnt_jacobian.data;
-    // auto jacobian = Base::m_forward_kinematics_solver;
-    // Base::m_jnt_space_inertia.data;
-    KDL::JntSpaceInertiaMatrix jnt_space_inertia;
-    m_jnt_space_inertia_solver->JntToMass(current_positions,
-                                          jnt_space_inertia);
-    // std::cout << "jnt_space_inertia: " << std::endl
-    // std::cout << jnt_space_inertia << std::endl;
-    KDL::Jacobian jnt_jacobian;
-    m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
-    // std::cout << "jnt_jacobian: " << std::endl
-    // std::cout << jnt_jacobian << std::endl;
+    // KDL::JntSpaceInertiaMatrix jnt_space_inertia;
+    // m_jnt_space_inertia_solver->JntToMass(current_positions,
+    //                                       jnt_space_inertia);
+    // std::cout << "jnt_space_inertia: " << std::endl;
+    // std::cout << jnt_space_inertia.data << std::endl;
+    // KDL::Jacobian jnt_jacobian;
+    // m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
+    // std::cout << "jnt_jacobian: " << std::endl;
+    // std::cout << jnt_jacobian.data << std::endl;
 
     net_force =
 
