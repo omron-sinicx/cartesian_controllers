@@ -172,7 +172,8 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
     ctrl::Vector3D center;
     // center << 0.0, 0.5, 0.04;
     // center << 0.0, 0.5, 0.081;
-    center << 0.0, 0.5, 0.05;
+    // center << 0.0, 0.5, 0.05;
+    center << -0.17, 0.51, 0.0755;
     std::cout << "center:" << std::endl << center << std::endl;
     ctrl::Vector3D normal_vec;
     // normal_vec = (ee_pos - center).normalized();
