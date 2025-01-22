@@ -170,8 +170,10 @@ class IKSolver {
   // Forward dynamics
   std::shared_ptr<KDL::ChainJntToJacSolver> m_jnt_jacobian_solver;
   std::shared_ptr<KDL::ChainDynParam> m_jnt_space_inertia_solver;
+  std::shared_ptr<KDL::ChainDynParam> m_jnt_coriolis_solver;
   KDL::Jacobian m_jnt_jacobian;
   KDL::JntSpaceInertiaMatrix m_jnt_space_inertia;
+  KDL::JntArray m_jnt_coriolis;
 
  protected:
   /**

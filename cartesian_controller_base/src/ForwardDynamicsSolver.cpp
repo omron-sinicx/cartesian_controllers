@@ -92,11 +92,12 @@ ForwardDynamicsSolver::getJointControlCmds(ros::Duration period,
   // Compute joint jacobian
   m_jnt_jacobian_solver->JntToJac(m_current_positions, m_jnt_jacobian);
 
+  // Compute coriolis forces
+  m_jnt_coriolis_solver->JntToCoriolis(m_current_positions,
+                                       m_current_velocities, m_jnt_coriolis);
+
   // DEBUG
   Eigen::Matrix<double, 6, 1> current_positions_eigen;
-  // current_positions_eigen << m_current_positions(0), m_current_positions(1),
-  //     m_current_positions(2), m_current_positions(3), m_current_positions(4),
-  //     m_current_positions(5);
   current_positions_eigen << m_current_positions.data;
   std::cout << "ForwardDynamicsSolver::current_positions_eigen: " << std::endl;
   std::cout << current_positions_eigen << std::endl;
@@ -166,8 +167,11 @@ bool ForwardDynamicsSolver::init(ros::NodeHandle& nh, const KDL::Chain& chain,
   m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(m_chain));
   m_jnt_space_inertia_solver.reset(
       new KDL::ChainDynParam(m_chain, KDL::Vector::Zero()));
+  m_jnt_coriolis_solver.reset(
+      new KDL::ChainDynParam(m_chain, KDL::Vector::Zero()));
   m_jnt_jacobian.resize(m_number_joints);
   m_jnt_space_inertia.resize(m_number_joints);
+  m_jnt_coriolis.resize(m_number_joints);
 
   // Connect dynamic reconfigure and overwrite the default values with values
   // on the parameter server. This is done automatically if parameters with
