@@ -92,6 +92,25 @@ ForwardDynamicsSolver::getJointControlCmds(ros::Duration period,
   // Compute joint jacobian
   m_jnt_jacobian_solver->JntToJac(m_current_positions, m_jnt_jacobian);
 
+  // DEBUG
+  Eigen::Matrix<double, 6, 1> current_positions_eigen;
+  // current_positions_eigen << m_current_positions(0), m_current_positions(1),
+  //     m_current_positions(2), m_current_positions(3), m_current_positions(4),
+  //     m_current_positions(5);
+  current_positions_eigen << m_current_positions.data;
+  std::cout << "ForwardDynamicsSolver::current_positions_eigen: " << std::endl;
+  std::cout << current_positions_eigen << std::endl;
+
+  Eigen::Matrix<double, 6, 6> jnt_space_inertia_eigen;
+  jnt_space_inertia_eigen << m_jnt_space_inertia.data;
+  std::cout << "ForwardDynamicsSolver::jnt_space_inertia_eigen: " << std::endl;
+  std::cout << jnt_space_inertia_eigen << std::endl;
+
+  Eigen::Matrix<double, 6, 6> jnt_jacobian_eigen;
+  jnt_jacobian_eigen << m_jnt_jacobian.data;
+  std::cout << "ForwardDynamicsSolver::jnt_jacobian_eigen: " << std::endl;
+  std::cout << jnt_jacobian_eigen << std::endl;
+
   // Compute joint accelerations according to: \f$ \ddot{q} = H^{-1} ( J^T f)
   // \f$
   m_current_accelerations.data = m_jnt_space_inertia.data.inverse() *
@@ -102,9 +121,9 @@ ForwardDynamicsSolver::getJointControlCmds(ros::Duration period,
       m_last_positions.data + m_last_velocities.data * period.toSec();
   m_current_velocities.data =
       m_last_velocities.data + m_current_accelerations.data * period.toSec();
-  m_current_velocities.data *=
-      0.9;  // 10 % global damping against unwanted null space motion.
-            // Will cause exponential slow-down without input.
+  m_current_velocities.data *= 0.9;
+  // 10 % global damping against unwanted null space motion.
+  // Will cause exponential slow-down without input.
 
   // Make sure positions stay in allowed margins
   applyJointVelocityLimits();
@@ -170,21 +189,22 @@ bool ForwardDynamicsSolver::init(ros::NodeHandle& nh, const KDL::Chain& chain,
 }
 
 bool ForwardDynamicsSolver::buildGenericModel() {
-  double mass[6] = {1.98, 3.4445, 1.437, 0.871, 0.805, 0.261};
-  double centor_of_mass[6][3] = {
-      {0.0, 0.0, -0.02}, {-0.11355, 0.0, 0.1157}, {-0.1632, 0.0, 0.0238},
-      {0.0, -0.01, 0.0}, {0.0, 0.01, 0.0},        {0.0, 0.0, -0.02},
-  };
-  double inertia_tensor[6][6] = {
-      // xx, yy, zz, xy, xz, yz
-      {0.008093166666666665, 0.008093166666666665, 0.005625, 0.0, 0.0, 0.0},
-      {0.021728491912499998, 0.021728491912499998, 0.00961875, 0.0, 0.0, 0.0},
-      {0.006544570199999999, 0.006544570199999999, 0.00354375, 0.0, 0.0, 0.0},
-      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
-      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
-      {0.00013626666666666665, 0.00013626666666666665, 0.0001792, 0.0, 0.0,
-       0.0},
-  };
+  // double mass[6] = {1.98, 3.4445, 1.437, 0.871, 0.805, 0.261};
+  // double centor_of_mass[6][3] = {
+  //     {0.0, 0.0, -0.02}, {-0.11355, 0.0, 0.1157}, {-0.1632, 0.0, 0.0238},
+  //     {0.0, -0.01, 0.0}, {0.0, 0.01, 0.0},        {0.0, 0.0, -0.02},
+  // };
+  // double inertia_tensor[6][6] = {
+  //     // xx, yy, zz, xy, xz, yz
+  //     {0.008093166666666665, 0.008093166666666665, 0.005625, 0.0, 0.0, 0.0},
+  //     {0.021728491912499998, 0.021728491912499998, 0.00961875, 0.0, 0.0,
+  //     0.0}, {0.006544570199999999, 0.006544570199999999, 0.00354375, 0.0,
+  //     0.0, 0.0}, {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0,
+  //     0.0, 0.0}, {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0,
+  //     0.0, 0.0}, {0.00013626666666666665, 0.00013626666666666665, 0.0001792,
+  //     0.0, 0.0,
+  //      0.0},
+  // };
   // Set all masses and inertias to minimal (yet stable) values.
   double ip_min = 0.000001;
   for (size_t i = 0; i < m_chain.segments.size(); ++i) {
@@ -201,16 +221,16 @@ bool ForwardDynamicsSolver::buildGenericModel() {
                                  ip_min   // izz
                                  // ixy, ixy, iyz default to 0.0
                                  )));
-          // mass[i],  // mass
-          // KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
-          //             centor_of_mass[i][2]),            // center of gravity
-          // KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
-          //                        inertia_tensor[i][1],  // iyy
-          //                        inertia_tensor[i][2],  // izz
-          //                        inertia_tensor[i][3],  // ixy
-          //                        inertia_tensor[i][4],  // ixz
-          //                        inertia_tensor[i][5]   // iyz
-          //                        )));
+      // mass[i],  // mass
+      // KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
+      //             centor_of_mass[i][2]),            // center of gravity
+      // KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
+      //                        inertia_tensor[i][1],  // iyy
+      //                        inertia_tensor[i][2],  // izz
+      //                        inertia_tensor[i][3],  // ixy
+      //                        inertia_tensor[i][4],  // ixz
+      //                        inertia_tensor[i][5]   // iyz
+      //                        )));
     }
   }
 

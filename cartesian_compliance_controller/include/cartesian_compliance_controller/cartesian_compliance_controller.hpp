@@ -97,49 +97,68 @@ bool CartesianComplianceController<HardwareInterface>::init(
       ros::NodeHandle(nh.getNamespace() + "/stiffness")));
   m_dyn_conf_server->setCallback(m_callback_type);
 
-  double mass[6] = {1.98, 3.4445, 1.437, 0.871, 0.805, 0.261};
-  double centor_of_mass[6][3] = {
-      {0.0, 0.0, -0.02}, {-0.11355, 0.0, 0.1157}, {-0.1632, 0.0, 0.0238},
-      {0.0, -0.01, 0.0}, {0.0, 0.01, 0.0},        {0.0, 0.0, -0.02},
-  };
-  double inertia_tensor[6][6] = {
-      // xx, yy, zz, xy, xz, yz
-      {0.008093166666666665, 0.008093166666666665, 0.005625, 0.0, 0.0, 0.0},
-      {0.021728491912499998, 0.021728491912499998, 0.00961875, 0.0, 0.0, 0.0},
-      {0.006544570199999999, 0.006544570199999999, 0.00354375, 0.0, 0.0, 0.0},
-      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
-      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
-      {0.00013626666666666665, 0.00013626666666666665, 0.0001792, 0.0, 0.0,
-       0.0},
-  };
+  buildGenericModel();
+  // KDL::Chain chain = Base::m_robot_chain;
   KDL::Chain chain = Base::m_ik_solver->getChain();
-  // for (size_t i = 0; i < chain.segments.size(); ++i) {
-  //   // Fixed joint segment
-  //   if (chain.segments[i].getJoint().getType() == KDL::Joint::None) {
-  //     chain.segments[i].setInertia(KDL::RigidBodyInertia::Zero());
-  //   } else  // relatively moving segment
-  //   {
-  //     chain.segments[i].setInertia(KDL::RigidBodyInertia(
-  //         // m_min,                          // mass
-  //         // KDL::Vector::Zero(),            // center of gravity
-  //         // KDL::RotationalInertia(ip_min,  // ixx
-  //         //                        ip_min,  // iyy
-  //         //                        ip_min   // izz
-  //         //                        // ixy, ixy, iyz default to 0.0
-  //         //                        )));
-  //         mass[i],  // mass
-  //         KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
-  //                     centor_of_mass[i][2]),            // center of gravity
-  //         KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
-  //                                 inertia_tensor[i][1],  // iyy
-  //                                 inertia_tensor[i][2],  // izz
-  //                                 inertia_tensor[i][3],  // ixy
-  //                                 inertia_tensor[i][4],  // ixz
-  //                                 inertia_tensor[i][5]   // iyz
-  //                                 )));
-  // }
   m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(chain));
-  m_jnt_space_inertia_solver.reset(new KDL::ChainDynParam(chain,KDL::Vector::Zero()));
+  m_jnt_space_inertia_solver.reset(
+      new KDL::ChainDynParam(chain, KDL::Vector::Zero()));
+  return true;
+}
+
+template <class HardwareInterface>
+bool CartesianComplianceController<HardwareInterface>::buildGenericModel() {
+  // double mass[6] = {1.98, 3.4445, 1.437, 0.871, 0.805, 0.261};
+  // double centor_of_mass[6][3] = {
+  //     {0.0, 0.0, -0.02}, {-0.11355, 0.0, 0.1157}, {-0.1632, 0.0, 0.0238},
+  //     {0.0, -0.01, 0.0}, {0.0, 0.01, 0.0},        {0.0, 0.0, -0.02},
+  // };
+  // double inertia_tensor[6][6] = {
+  //     // xx, yy, zz, xy, xz, yz
+  //     {0.008093166666666665, 0.008093166666666665, 0.005625, 0.0, 0.0, 0.0},
+  //     {0.021728491912499998, 0.021728491912499998, 0.00961875, 0.0, 0.0,
+  //     0.0}, {0.006544570199999999, 0.006544570199999999, 0.00354375, 0.0,
+  //     0.0, 0.0}, {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0,
+  //     0.0, 0.0}, {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0,
+  //     0.0, 0.0}, {0.00013626666666666665, 0.00013626666666666665, 0.0001792,
+  //     0.0, 0.0,
+  //      0.0},
+  // };
+  KDL::Chain chain = Base::m_robot_chain;
+  double m_min = 0.1;
+  double ip_min = 0.000001;
+  for (size_t i = 0; i < chain.segments.size(); ++i) {
+    // Fixed joint segment
+    if (chain.segments[i].getJoint().getType() == KDL::Joint::None) {
+      chain.segments[i].setInertia(KDL::RigidBodyInertia::Zero());
+    } else  // relatively moving segment
+    {
+      chain.segments[i].setInertia(KDL::RigidBodyInertia(
+          m_min,                          // mass
+          KDL::Vector::Zero(),            // center of gravity
+          KDL::RotationalInertia(ip_min,  // ixx
+                                 ip_min,  // iyy
+                                 ip_min   // izz
+                                 // ixy, ixy, iyz default to 0.0
+                                 )));
+      // mass[i],  // mass
+      // KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
+      //             centor_of_mass[i][2]),            // center of gravity
+      // KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
+      //                        inertia_tensor[i][1],  // iyy
+      //                        inertia_tensor[i][2],  // izz
+      //                        inertia_tensor[i][3],  // ixy
+      //                        inertia_tensor[i][4],  // ixz
+      //                        inertia_tensor[i][5]   // iyz
+      //                        )));
+    }
+  }
+  // Only give the last segment a generic mass and inertia.
+  // See https://arxiv.org/pdf/1908.06252.pdf for a motivation for this setting.
+  double m = 1;
+  double ip = 1;
+  chain.segments[chain.segments.size() - 1].setInertia(KDL::RigidBodyInertia(
+      m, KDL::Vector::Zero(), KDL::RotationalInertia(ip, ip, ip)));
 
   return true;
 }
@@ -278,24 +297,42 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
     // m_selection_matrix_pd_check << std::endl;
 
     auto current_positions = Base::m_ik_solver->getPositions();
-    auto current_velocity = Base::m_ik_solver->getVelocity();
+    ctrl::Vector6D current_positions_eigen;
+    // current_positions_eigen << current_positions(0), current_positions(1),
+    //     current_positions(2), current_positions(3), current_positions(4),
+    //     current_positions(5);
+    current_positions_eigen << current_positions.data;
+    std::cout << "current_positions_eigen: " << std::endl;
+    std::cout << current_positions_eigen << std::endl;
 
-    KDL::JntSpaceInertiaMatrix jnt_space_inertia;
-    m_jnt_space_inertia_solver->JntToMass(current_positions,
-                                          jnt_space_inertia);
-    // std::cout << "jnt_space_inertia: " << std::endl;
-    // std::cout << jnt_space_inertia.data << std::endl;
+    auto current_velocity = Base::m_ik_solver->getVelocity();
+    ctrl::Vector6D current_velocity_eigen;
+    // current_velocity_eigen << current_velocity(0), current_velocity(1),
+    //     current_velocity(2), current_velocity(3), current_velocity(4),
+    //     current_velocity(5);
+    current_velocity_eigen << current_velocity.data;
+    std::cout << "current_velocity_eigen: " << std::endl;
+    std::cout << current_velocity_eigen << std::endl;
+
+    buildGenericModel();
+
+    // KDL::JntSpaceInertiaMatrix jnt_space_inertia;
+    // int number_joints = Base::m_robot_chain.getNrOfJoints();
+    // int number_joints = Base::m_ik_solver->m_number_joints;
+    // jnt_space_inertia.resize(number_joints);
+    // m_jnt_space_inertia_solver->JntToMass(current_positions, jnt_space_inertia);
     Eigen::Matrix<double, 6, 6> jnt_space_inertia_eigen;
-    jnt_space_inertia_eigen << jnt_space_inertia.data;
+    jnt_space_inertia_eigen << Base::m_ik_solver->m_jnt_space_inertia.data;
+    // jnt_space_inertia_eigen << jnt_space_inertia.data;
     std::cout << "jnt_space_inertia_eigen: " << std::endl;
     std::cout << jnt_space_inertia_eigen << std::endl;
 
-    KDL::Jacobian jnt_jacobian;
-    m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
-    // std::cout << "jnt_jacobian: " << std::endl;
-    // std::cout << jnt_jacobian.data << std::endl;
+    // KDL::Jacobian jnt_jacobian;
+    // jnt_jacobian.resize(number_joints);
+    // m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
     Eigen::Matrix<double, 6, 6> jnt_jacobian_eigen;
-    jnt_jacobian_eigen << jnt_jacobian.data;
+    jnt_jacobian_eigen << Base::m_ik_solver->m_jnt_jacobian.data;
+    // jnt_jacobian_eigen << jnt_jacobian.data;
     std::cout << "jnt_jacobian_eigen: " << std::endl;
     std::cout << jnt_jacobian_eigen << std::endl;
 

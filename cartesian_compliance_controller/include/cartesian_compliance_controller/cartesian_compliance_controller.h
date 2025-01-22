@@ -102,6 +102,8 @@ class CartesianComplianceController
     typedef cartesian_motion_controller::CartesianMotionController<HardwareInterface> MotionBase;
     typedef cartesian_force_controller::CartesianForceController<HardwareInterface> ForceBase;
 
+    bool buildGenericModel();
+
   private:
     /**
      * @brief Compute the net force out of target wrench and stiffness-related pose offset
