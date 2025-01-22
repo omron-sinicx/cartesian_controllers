@@ -97,11 +97,49 @@ bool CartesianComplianceController<HardwareInterface>::init(
       ros::NodeHandle(nh.getNamespace() + "/stiffness")));
   m_dyn_conf_server->setCallback(m_callback_type);
 
-  // KDL::Chain chain = Base::m_ik_solver->getChain();
-  m_jnt_jacobian_solver.reset(
-      new KDL::ChainJntToJacSolver(Base::m_ik_solver->getChain()));
-  m_jnt_space_inertia_solver.reset(new KDL::ChainDynParam(
-      Base::m_ik_solver->getChain(), KDL::Vector::Zero()));
+  double mass[6] = {1.98, 3.4445, 1.437, 0.871, 0.805, 0.261};
+  double centor_of_mass[6][3] = {
+      {0.0, 0.0, -0.02}, {-0.11355, 0.0, 0.1157}, {-0.1632, 0.0, 0.0238},
+      {0.0, -0.01, 0.0}, {0.0, 0.01, 0.0},        {0.0, 0.0, -0.02},
+  };
+  double inertia_tensor[6][6] = {
+      // xx, yy, zz, xy, xz, yz
+      {0.008093166666666665, 0.008093166666666665, 0.005625, 0.0, 0.0, 0.0},
+      {0.021728491912499998, 0.021728491912499998, 0.00961875, 0.0, 0.0, 0.0},
+      {0.006544570199999999, 0.006544570199999999, 0.00354375, 0.0, 0.0, 0.0},
+      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
+      {0.0020849999999999996, 0.0020849999999999996, 0.00225, 0.0, 0.0, 0.0},
+      {0.00013626666666666665, 0.00013626666666666665, 0.0001792, 0.0, 0.0,
+       0.0},
+  };
+  KDL::Chain chain = Base::m_ik_solver->getChain();
+  // for (size_t i = 0; i < chain.segments.size(); ++i) {
+  //   // Fixed joint segment
+  //   if (chain.segments[i].getJoint().getType() == KDL::Joint::None) {
+  //     chain.segments[i].setInertia(KDL::RigidBodyInertia::Zero());
+  //   } else  // relatively moving segment
+  //   {
+  //     chain.segments[i].setInertia(KDL::RigidBodyInertia(
+  //         // m_min,                          // mass
+  //         // KDL::Vector::Zero(),            // center of gravity
+  //         // KDL::RotationalInertia(ip_min,  // ixx
+  //         //                        ip_min,  // iyy
+  //         //                        ip_min   // izz
+  //         //                        // ixy, ixy, iyz default to 0.0
+  //         //                        )));
+  //         mass[i],  // mass
+  //         KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
+  //                     centor_of_mass[i][2]),            // center of gravity
+  //         KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
+  //                                 inertia_tensor[i][1],  // iyy
+  //                                 inertia_tensor[i][2],  // izz
+  //                                 inertia_tensor[i][3],  // ixy
+  //                                 inertia_tensor[i][4],  // ixz
+  //                                 inertia_tensor[i][5]   // iyz
+  //                                 )));
+  // }
+  m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(chain));
+  m_jnt_space_inertia_solver.reset(new KDL::ChainDynParam(chain,KDL::Vector::Zero()));
 
   return true;
 }
@@ -241,19 +279,25 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
 
     auto current_positions = Base::m_ik_solver->getPositions();
     auto current_velocity = Base::m_ik_solver->getVelocity();
+
     KDL::JntSpaceInertiaMatrix jnt_space_inertia;
-    m_jnt_space_inertia_solver->JntToMass(current_positions, jnt_space_inertia);
-    std::cout << "jnt_space_inertia: " << std::endl;
-    std::cout << jnt_space_inertia.data << std::endl;
+    m_jnt_space_inertia_solver->JntToMass(current_positions,
+                                          jnt_space_inertia);
+    // std::cout << "jnt_space_inertia: " << std::endl;
+    // std::cout << jnt_space_inertia.data << std::endl;
+    Eigen::Matrix<double, 6, 6> jnt_space_inertia_eigen;
+    jnt_space_inertia_eigen << jnt_space_inertia.data;
+    std::cout << "jnt_space_inertia_eigen: " << std::endl;
+    std::cout << jnt_space_inertia_eigen << std::endl;
+
     KDL::Jacobian jnt_jacobian;
     m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
-    std::cout << "jnt_jacobian: " << std::endl;
-    std::cout << jnt_jacobian.data << std::endl;
-
-    // ctrl::Vector6D sensor_wrench;
-    // sensor_wrench = ForceBase::getFTSensorWrench();
-    // std::cout << "sensor_wrench: " << std::endl;
-    // std::cout << sensor_wrench << std::endl;
+    // std::cout << "jnt_jacobian: " << std::endl;
+    // std::cout << jnt_jacobian.data << std::endl;
+    Eigen::Matrix<double, 6, 6> jnt_jacobian_eigen;
+    jnt_jacobian_eigen << jnt_jacobian.data;
+    std::cout << "jnt_jacobian_eigen: " << std::endl;
+    std::cout << jnt_jacobian_eigen << std::endl;
 
     net_force =
 
