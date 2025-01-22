@@ -37,17 +37,16 @@
  */
 //-----------------------------------------------------------------------------
 
-
 #ifndef FORWARD_DYNAMICS_SOLVER_H_INCLUDED
 #define FORWARD_DYNAMICS_SOLVER_H_INCLUDED
 
 // Project
-#include <cartesian_controller_base/Utility.h>
 #include <cartesian_controller_base/IKSolver.h>
+#include <cartesian_controller_base/Utility.h>
 
 // Dynamic reconfigure
-#include <dynamic_reconfigure/server.h>
 #include <cartesian_controller_base/ForwardDynamicsSolverConfig.h>
+#include <dynamic_reconfigure/server.h>
 
 // ros_controls
 #include <hardware_interface/joint_command_interface.h>
@@ -57,19 +56,19 @@
 #include <trajectory_msgs/JointTrajectoryPoint.h>
 
 // other
-#include <vector>
 #include <memory>
+#include <vector>
 
 // KDL
-#include <kdl/frames.hpp>
 #include <kdl/chain.hpp>
-#include <kdl/jacobian.hpp>
-#include <kdl/chainjnttojacsolver.hpp>
 #include <kdl/chaindynparam.hpp>
 #include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/chainfksolvervel_recursive.hpp>
+#include <kdl/chainjnttojacsolver.hpp>
+#include <kdl/frames.hpp>
+#include <kdl/jacobian.hpp>
 
-namespace cartesian_controller_base{
+namespace cartesian_controller_base {
 
 /*! \brief The default IK solver for Cartesian controllers
  *
@@ -85,68 +84,64 @@ namespace cartesian_controller_base{
  *  the applied force to the end effector.  The joint accelerations are
  *  integrated twice to obtain joint velocities and joint positions
  *  respectively.
- *  Check more details behind the solver here: https://arxiv.org/pdf/1908.06252.pdf
+ *  Check more details behind the solver here:
+ * https://arxiv.org/pdf/1908.06252.pdf
  */
-class ForwardDynamicsSolver : public IKSolver
-{
-  public:
-    ForwardDynamicsSolver();
-    ~ForwardDynamicsSolver();
+class ForwardDynamicsSolver : public IKSolver {
+ public:
+  ForwardDynamicsSolver();
+  ~ForwardDynamicsSolver();
 
-    /**
-     * @brief Compute joint target commands with approximate forward dynamics
-     *
-     * The resulting motion is the output of a forward dynamics simulation. It
-     * can be forwarded to a real controller to mimic the simulated behavior.
-     *
-     * @param period The duration in sec for this simulation step
-     * @param net_force The applied net force, expressed in the root frame
-     *
-     * @return A point holding positions, velocities and accelerations of each joint
-     */
-    trajectory_msgs::JointTrajectoryPoint getJointControlCmds(
-        ros::Duration period,
-        const ctrl::Vector6D& net_force);
+  /**
+   * @brief Compute joint target commands with approximate forward dynamics
+   *
+   * The resulting motion is the output of a forward dynamics simulation. It
+   * can be forwarded to a real controller to mimic the simulated behavior.
+   *
+   * @param period The duration in sec for this simulation step
+   * @param net_force The applied net force, expressed in the root frame
+   *
+   * @return A point holding positions, velocities and accelerations of each
+   * joint
+   */
+  trajectory_msgs::JointTrajectoryPoint getJointControlCmds(
+      ros::Duration period, const ctrl::Vector6D& net_force);
 
-    /**
-     * @brief Initialize the solver
-     *
-     * @param nh A node handle for namespace-local parameter management
-     * @param chain The kinematic chain of the robot
-     * @param upper_pos_limits Tuple with max positive joint angles
-     * @param lower_pos_limits Tuple with max negative joint angles
-     *
-     * @return True, if everything went well
-     */
-    bool init(ros::NodeHandle& nh,
-              const KDL::Chain& chain,
-              const KDL::JntArray& upper_pos_limits,
-              const KDL::JntArray& lower_pos_limits,
-              const KDL::JntArray& velocity_limits);
+  /**
+   * @brief Initialize the solver
+   *
+   * @param nh A node handle for namespace-local parameter management
+   * @param chain The kinematic chain of the robot
+   * @param upper_pos_limits Tuple with max positive joint angles
+   * @param lower_pos_limits Tuple with max negative joint angles
+   *
+   * @return True, if everything went well
+   */
+  bool init(ros::NodeHandle& nh, const KDL::Chain& chain,
+            const KDL::JntArray& upper_pos_limits,
+            const KDL::JntArray& lower_pos_limits,
+            const KDL::JntArray& velocity_limits);
 
-  private:
+  // Forward dynamics
+  // std::shared_ptr<KDL::ChainJntToJacSolver> m_jnt_jacobian_solver;
+  // std::shared_ptr<KDL::ChainDynParam> m_jnt_space_inertia_solver;
+  // KDL::Jacobian m_jnt_jacobian;
+  // KDL::JntSpaceInertiaMatrix m_jnt_space_inertia;
 
-    //! Build a generic robot model for control
-    bool buildGenericModel();
+ private:
+  //! Build a generic robot model for control
+  bool buildGenericModel();
 
-    // Forward dynamics
-    std::shared_ptr<KDL::ChainJntToJacSolver> m_jnt_jacobian_solver;
-    std::shared_ptr<KDL::ChainDynParam>       m_jnt_space_inertia_solver;
-    KDL::Jacobian                               m_jnt_jacobian;
-    KDL::JntSpaceInertiaMatrix                  m_jnt_space_inertia;
+  // IK solver specific dynamic reconfigure
+  std::atomic<double> m_min = 0.1;
+  typedef cartesian_controller_base::ForwardDynamicsSolverConfig IKConfig;
 
-    // IK solver specific dynamic reconfigure
-    std::atomic<double> m_min = 0.1;
-    typedef cartesian_controller_base::ForwardDynamicsSolverConfig
-      IKConfig;
+  void dynamicReconfigureCallback(IKConfig& config, uint32_t level);
 
-    void dynamicReconfigureCallback(IKConfig& config, uint32_t level);
-
-    std::shared_ptr<dynamic_reconfigure::Server<IKConfig> > m_dyn_conf_server;
-    dynamic_reconfigure::Server<IKConfig>::CallbackType m_callback_type;
+  std::shared_ptr<dynamic_reconfigure::Server<IKConfig> > m_dyn_conf_server;
+  dynamic_reconfigure::Server<IKConfig>::CallbackType m_callback_type;
 };
 
-
-} // namespace
+}  // namespace cartesian_controller_base
 
 #endif
