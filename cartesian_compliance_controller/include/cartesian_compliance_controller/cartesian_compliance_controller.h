@@ -102,7 +102,7 @@ class CartesianComplianceController
     typedef cartesian_motion_controller::CartesianMotionController<HardwareInterface> MotionBase;
     typedef cartesian_force_controller::CartesianForceController<HardwareInterface> ForceBase;
 
-    bool buildGenericModel();
+    // bool buildGenericModel();
 
   private:
     /**
