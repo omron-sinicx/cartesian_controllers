@@ -194,23 +194,23 @@ bool ForwardDynamicsSolver::buildGenericModel() {
     } else  // relatively moving segment
     {
       m_chain.segments[i].setInertia(KDL::RigidBodyInertia(
-          // m_min,                          // mass
-          // KDL::Vector::Zero(),            // center of gravity
-          // KDL::RotationalInertia(ip_min,  // ixx
-          //                        ip_min,  // iyy
-          //                        ip_min   // izz
-          //                        // ixy, ixy, iyz default to 0.0
-          //                        )));
-          mass[i],  // mass
-          KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
-                      centor_of_mass[i][2]),            // center of gravity
-          KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
-                                 inertia_tensor[i][1],  // iyy
-                                 inertia_tensor[i][2],  // izz
-                                 inertia_tensor[i][3],  // ixy
-                                 inertia_tensor[i][4],  // ixz
-                                 inertia_tensor[i][5]   // iyz
+          m_min,                          // mass
+          KDL::Vector::Zero(),            // center of gravity
+          KDL::RotationalInertia(ip_min,  // ixx
+                                 ip_min,  // iyy
+                                 ip_min   // izz
+                                 // ixy, ixy, iyz default to 0.0
                                  )));
+          // mass[i],  // mass
+          // KDL::Vector(centor_of_mass[i][0], centor_of_mass[i][1],
+          //             centor_of_mass[i][2]),            // center of gravity
+          // KDL::RotationalInertia(inertia_tensor[i][0],  // ixx
+          //                        inertia_tensor[i][1],  // iyy
+          //                        inertia_tensor[i][2],  // izz
+          //                        inertia_tensor[i][3],  // ixy
+          //                        inertia_tensor[i][4],  // ixz
+          //                        inertia_tensor[i][5]   // iyz
+          //                        )));
     }
   }
 

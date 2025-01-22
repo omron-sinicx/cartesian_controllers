@@ -47,12 +47,11 @@
 #include <std_srvs/Trigger.h>
 
 // Dynamic reconfigure
-#include <dynamic_reconfigure/server.h>
 #include <cartesian_controller_base/ForwardDynamicsSolverConfig.h>
 #include <cartesian_force_controller/CartesianForceControllerConfig.h>
+#include <dynamic_reconfigure/server.h>
 
-namespace cartesian_force_controller
-{
+namespace cartesian_force_controller {
 
 /**
  * @brief A ROS-control controller for Cartesian force control
@@ -66,7 +65,8 @@ namespace cartesian_force_controller
  * The underlying solver maps this remaining wrench to joint motion.
  * Users can steer their robot with this control in free space. The speed of
  * the end effector motion is set with PD gains on each Cartesian axes.
- * In contact, the controller regulates the net force of the two wrenches to zero.
+ * In contact, the controller regulates the net force of the two wrenches to
+ * zero.
  *
  * Note that during free motion, users can generally set higher control gains
  * for faster motion.  In contact with the environment, however, normally lower
@@ -75,87 +75,102 @@ namespace cartesian_force_controller
  * real hardware, such that some experiments might be required for each use
  * case.
  *
- * @tparam HardwareInterface The interface to support. Either PositionJointInterface or VelocityJointInterface
+ * @tparam HardwareInterface The interface to support. Either
+ * PositionJointInterface or VelocityJointInterface
  */
 template <class HardwareInterface>
-class CartesianForceController : public virtual cartesian_controller_base::CartesianControllerBase<HardwareInterface>
-{
-  public:
-    CartesianForceController();
+class CartesianForceController
+    : public virtual cartesian_controller_base::CartesianControllerBase<
+          HardwareInterface> {
+ public:
+  CartesianForceController();
 
-    bool init(HardwareInterface* hw, ros::NodeHandle& nh);
+  bool init(HardwareInterface* hw, ros::NodeHandle& nh);
 
-    void starting(const ros::Time& time);
+  void starting(const ros::Time& time);
 
-    void stopping(const ros::Time& time);
+  void stopping(const ros::Time& time);
 
-    void update(const ros::Time& time, const ros::Duration& period);
+  void update(const ros::Time& time, const ros::Duration& period);
 
-    typedef cartesian_controller_base::CartesianControllerBase<HardwareInterface> Base;
+  typedef cartesian_controller_base::CartesianControllerBase<HardwareInterface>
+      Base;
 
-  protected:
-    /**
-     * @brief Compute the net force out of target wrench and measured sensor wrench
-     *
-     * @return The remaining error wrench, given in robot base frame
-     */
-    ctrl::Vector6D        computeForceError();
-    std::string           m_new_ft_sensor_ref;
-    void setFtSensorReferenceFrame(const std::string& new_ref);
+  // ctrl::Vector6D m_ft_sensor_wrench;
+  // std::string m_ft_sensor_ref_link;
 
-    /**
-     * @brief Publish the controller's wrenches (sensor, gravity, target and net force)
-     *
-     * The data are w.r.t. the specified robot base link.
-     */
-    void publishStateWrenchFeedback(realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>& rt_publisher,
-                                    ctrl::Vector6D& wrench);
+  ctrl::Vector6D getFTSensorWrench() {
+    return Base::displayInBaseLink(m_ft_sensor_wrench, m_new_ft_sensor_ref);
+  }
 
-  private:
-    ctrl::Vector6D        compensateGravity();
+ protected:
+  /**
+   * @brief Compute the net force out of target wrench and measured sensor
+   * wrench
+   *
+   * @return The remaining error wrench, given in robot base frame
+   */
+  ctrl::Vector6D computeForceError();
+  std::string m_new_ft_sensor_ref;
+  void setFtSensorReferenceFrame(const std::string& new_ref);
 
-    void targetWrenchCallback(const geometry_msgs::WrenchStamped& wrench);
-    void ftSensorWrenchCallback(const geometry_msgs::WrenchStamped& wrench);
-    bool signalTaringCallback(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+  /**
+   * @brief Publish the controller's wrenches (sensor, gravity, target and net
+   * force)
+   *
+   * The data are w.r.t. the specified robot base link.
+   */
+  void publishStateWrenchFeedback(
+      realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>&
+          rt_publisher,
+      ctrl::Vector6D& wrench);
 
-    ros::ServiceServer    m_signal_taring_server;
-    ros::Subscriber       m_target_wrench_subscriber;
-    ros::Subscriber       m_ft_sensor_wrench_subscriber;
-    ctrl::Vector6D        m_target_wrench;
-    ctrl::Vector6D        m_ft_sensor_wrench;
-    ctrl::Vector6D        m_weight_force;
-    ctrl::Vector6D        m_grav_comp_during_taring;
-    ctrl::Vector3D        m_center_of_mass;
-    std::string           m_ft_sensor_ref_link;
-    KDL::Frame            m_ft_sensor_transform;
+ private:
+  ctrl::Vector6D compensateGravity();
 
-    /**
-     * Allow users to choose whether to specify their target wrenches in the
-     * end-effector frame (= True) or the base frame (= False). The first one
-     * is easier for explicit task programming, while the second one is more
-     * intuitive for tele-manipulation.
-     */
-    bool m_hand_frame_control;
+  void targetWrenchCallback(const geometry_msgs::WrenchStamped& wrench);
+  void ftSensorWrenchCallback(const geometry_msgs::WrenchStamped& wrench);
+  bool signalTaringCallback(std_srvs::Trigger::Request& req,
+                            std_srvs::Trigger::Response& res);
 
-    // Force control specific dynamic reconfigure
-    typedef cartesian_force_controller::CartesianForceControllerConfig Config;
+  ros::ServiceServer m_signal_taring_server;
+  ros::Subscriber m_target_wrench_subscriber;
+  ros::Subscriber m_ft_sensor_wrench_subscriber;
+  ctrl::Vector6D m_target_wrench;
+  ctrl::Vector6D m_weight_force;
+  ctrl::Vector6D m_grav_comp_during_taring;
+  ctrl::Vector3D m_center_of_mass;
+  KDL::Frame m_ft_sensor_transform;
+  ctrl::Vector6D m_ft_sensor_wrench;
+  std::string m_ft_sensor_ref_link;
 
-    void dynamicReconfigureCallback(Config& config, uint32_t level);
+  /**
+   * Allow users to choose whether to specify their target wrenches in the
+   * end-effector frame (= True) or the base frame (= False). The first one
+   * is easier for explicit task programming, while the second one is more
+   * intuitive for tele-manipulation.
+   */
+  bool m_hand_frame_control;
 
-    std::shared_ptr<dynamic_reconfigure::Server<Config> > m_dyn_conf_server;
-    dynamic_reconfigure::Server<Config>::CallbackType m_callback_type;
+  // Force control specific dynamic reconfigure
+  typedef cartesian_force_controller::CartesianForceControllerConfig Config;
 
-    realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
+  void dynamicReconfigureCallback(Config& config, uint32_t level);
+
+  std::shared_ptr<dynamic_reconfigure::Server<Config> > m_dyn_conf_server;
+  dynamic_reconfigure::Server<Config>::CallbackType m_callback_type;
+
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
       m_feedback_gravity_wrench_publisher;
-    realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
       m_feedback_sensor_wrench_publisher;
-    realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
       m_feedback_target_wrench_publisher;
-    realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::WrenchStamped>
       m_feedback_net_force_wrench_publisher;
 };
 
-}
+}  // namespace cartesian_force_controller
 
 #include <cartesian_force_controller/cartesian_force_controller.hpp>
 

@@ -98,8 +98,10 @@ bool CartesianComplianceController<HardwareInterface>::init(
   m_dyn_conf_server->setCallback(m_callback_type);
 
   // KDL::Chain chain = Base::m_ik_solver->getChain();
-  m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(Base::m_ik_solver->getChain()));
-  m_jnt_space_inertia_solver.reset(new KDL::ChainDynParam(Base::m_ik_solver->getChain(),KDL::Vector::Zero()));
+  m_jnt_jacobian_solver.reset(
+      new KDL::ChainJntToJacSolver(Base::m_ik_solver->getChain()));
+  m_jnt_space_inertia_solver.reset(new KDL::ChainDynParam(
+      Base::m_ik_solver->getChain(), KDL::Vector::Zero()));
 
   return true;
 }
@@ -236,17 +238,22 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
     //     (ctrl::Matrix6D::Identity() - m_selection_matrix_pd);
     // std::cout << "m_selection_matrix_pd_check: " << std::endl <<
     // m_selection_matrix_pd_check << std::endl;
+
     auto current_positions = Base::m_ik_solver->getPositions();
     auto current_velocity = Base::m_ik_solver->getVelocity();
-    // KDL::JntSpaceInertiaMatrix jnt_space_inertia;
-    // m_jnt_space_inertia_solver->JntToMass(current_positions,
-    //                                       jnt_space_inertia);
-    // std::cout << "jnt_space_inertia: " << std::endl;
-    // std::cout << jnt_space_inertia.data << std::endl;
-    // KDL::Jacobian jnt_jacobian;
-    // m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
-    // std::cout << "jnt_jacobian: " << std::endl;
-    // std::cout << jnt_jacobian.data << std::endl;
+    KDL::JntSpaceInertiaMatrix jnt_space_inertia;
+    m_jnt_space_inertia_solver->JntToMass(current_positions, jnt_space_inertia);
+    std::cout << "jnt_space_inertia: " << std::endl;
+    std::cout << jnt_space_inertia.data << std::endl;
+    KDL::Jacobian jnt_jacobian;
+    m_jnt_jacobian_solver->JntToJac(current_positions, jnt_jacobian);
+    std::cout << "jnt_jacobian: " << std::endl;
+    std::cout << jnt_jacobian.data << std::endl;
+
+    // ctrl::Vector6D sensor_wrench;
+    // sensor_wrench = ForceBase::getFTSensorWrench();
+    // std::cout << "sensor_wrench: " << std::endl;
+    // std::cout << sensor_wrench << std::endl;
 
     net_force =
 
