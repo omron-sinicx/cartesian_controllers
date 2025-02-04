@@ -147,7 +147,7 @@ void CartesianComplianceController<HardwareInterface>::update(
 template <class HardwareInterface>
 ctrl::Vector6D
 CartesianComplianceController<HardwareInterface>::computeComplianceError() {
-  ROS_INFO("computeComplianceError");
+  ROS_INFO_THROTTLE(1, "computeComplianceError");
   // std::cout << "m_selection_matrix: " << std::endl
   //           << m_selection_matrix << std::endl;
   // bool powder_grounding_flag = true;
