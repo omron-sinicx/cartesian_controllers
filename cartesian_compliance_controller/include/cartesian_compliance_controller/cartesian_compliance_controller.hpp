@@ -216,19 +216,19 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
   // bool powder_grounding_flag = true;
   bool powder_grounding_flag = false;
 
-  Eigen::Matrix<double, 6, 6> jnt_jacobian_eigen;
-  jnt_jacobian_eigen << Base::m_ik_solver->m_jnt_jacobian.data;
-  std::cout << "jnt_jacobian_eigen: " << std::endl;
-  std::cout << jnt_jacobian_eigen << std::endl;
-  Eigen::Matrix<double, 6, 6> jnt_jacobian_eigen_t_pinv;
-  jnt_jacobian_eigen_t_pinv = jnt_jacobian_eigen.transpose()
-                                  .completeOrthogonalDecomposition()
-                                  .pseudoInverse();
+  // Eigen::Matrix<double, 6, 6> jnt_jacobian_eigen;
+  // jnt_jacobian_eigen << Base::m_ik_solver->m_jnt_jacobian.data;
+  // std::cout << "jnt_jacobian_eigen: " << std::endl;
+  // std::cout << jnt_jacobian_eigen << std::endl;
+  // Eigen::Matrix<double, 6, 6> jnt_jacobian_eigen_t_pinv;
+  // jnt_jacobian_eigen_t_pinv = jnt_jacobian_eigen.transpose()
+  //                                 .completeOrthogonalDecomposition()
+  //                                 .pseudoInverse();
 
-  Eigen::Matrix<double, 6, 1> jnt_coriolis_eigen;
-  jnt_coriolis_eigen << Base::m_ik_solver->m_jnt_coriolis.data;
-  std::cout << "jnt_coriolis_eigen: " << std::endl;
-  std::cout << jnt_coriolis_eigen << std::endl;
+  // Eigen::Matrix<double, 6, 1> jnt_coriolis_eigen;
+  // jnt_coriolis_eigen << Base::m_ik_solver->m_jnt_coriolis.data;
+  // std::cout << "jnt_coriolis_eigen: " << std::endl;
+  // std::cout << jnt_coriolis_eigen << std::endl;
 
   ctrl::Vector6D net_force;
   if (!m_use_parallel_force_position_control)
@@ -367,7 +367,7 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
         // Sensor and target force in base orientation
         + ((ctrl::Matrix6D::Identity() - m_selection_matrix) *
            ForceBase::computeForceError()
-            - jnt_jacobian_eigen_t_pinv * jnt_coriolis_eigen
+            // - jnt_jacobian_eigen_t_pinv * jnt_coriolis_eigen
           );
   }
 
