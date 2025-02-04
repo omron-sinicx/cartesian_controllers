@@ -216,11 +216,11 @@ bool ForwardDynamicsSolver::buildGenericModel() {
 
   // Only give the last segment a generic mass and inertia.
   // See https://arxiv.org/pdf/1908.06252.pdf for a motivation for this setting.
-  double m = 1;
-  double ip = 1;
-  m_chain.segments[m_chain.segments.size() - 1].setInertia(
-      KDL::RigidBodyInertia(m, KDL::Vector::Zero(),
-                            KDL::RotationalInertia(ip, ip, ip)));
+  // double m = 1;
+  // double ip = 1;
+  // m_chain.segments[m_chain.segments.size() - 1].setInertia(
+  //     KDL::RigidBodyInertia(m, KDL::Vector::Zero(),
+  //                           KDL::RotationalInertia(ip, ip, ip)));
 
   return true;
 }
