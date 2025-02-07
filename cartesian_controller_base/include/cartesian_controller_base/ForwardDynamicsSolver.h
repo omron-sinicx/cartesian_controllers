@@ -128,6 +128,7 @@ class ForwardDynamicsSolver : public IKSolver
 
     //! Build a generic robot model for control
     bool buildGenericModel();
+    bool buildUR5eModel();
 
     // Forward dynamics
     std::shared_ptr<KDL::ChainJntToJacSolver> m_jnt_jacobian_solver;
