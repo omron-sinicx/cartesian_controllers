@@ -166,8 +166,6 @@ namespace cartesian_controller_base{
       if (m_velocity_limits(i) == 0)
         continue;
 
-      const double &unbounded_velocity = m_current_velocities(i);
-
       // Clamp each joint velocity to a joint specific limit.
       const double bounded_velocity = std::clamp(m_current_velocities(i), -m_velocity_limits(i), m_velocity_limits(i));
       velocity_scaling_factor = std::min(velocity_scaling_factor, bounded_velocity / m_current_velocities(i));

@@ -4,7 +4,7 @@ project(cartesian_controller_base)
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++17)
 
-set(ADDITIONAL_COMPILE_OPTIONS -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+set(ADDITIONAL_COMPILE_OPTIONS -Wall -Wextra -Wpedantic -Wno-unused-parameter -Wno-format)
 add_compile_options(${ADDITIONAL_COMPILE_OPTIONS})
 
 # Sets build type to "Release" in case no build type has not been set before
