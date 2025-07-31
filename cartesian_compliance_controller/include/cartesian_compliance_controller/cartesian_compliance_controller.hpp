@@ -64,8 +64,7 @@ bool CartesianComplianceController<HardwareInterface>::init(
   MotionBase::init(hw, nh);
   ForceBase::init(hw, nh);
   m_use_parallel_force_position_control = false;
-  m_use_parallel_force_position_control_in_gripper_frame = false;
-  m_use_parallel_force_position_control_powder_grinding = false;
+  m_use_selection_matrix_in_gripper_frame = false;
 
   if (!nh.getParam("compliance_ref_link", m_compliance_ref_link)) {
     ROS_ERROR_STREAM("Failed to load "
@@ -150,12 +149,26 @@ void CartesianComplianceController<HardwareInterface>::update(
 template <class HardwareInterface>
 ctrl::Vector6D
 CartesianComplianceController<HardwareInterface>::computeComplianceError() {
-  ctrl::Vector6D pose_error, pose_error_sel;
-  ctrl::Vector6D ft_error, ft_error_sel;
-  ctrl::Matrix3D eef_to_base;
+  ctrl::Matrix6D selection_matrix;
   ctrl::Vector6D net_force;
-  if (!m_use_parallel_force_position_control)
-    net_force =
+
+  // First check whether we use parallel control (requires selection matrix)
+  if (m_use_parallel_force_position_control) {
+      if (m_use_selection_matrix_in_gripper_frame) {
+        selection_matrix = Base::displayInBaseLink(m_selection_matrix, m_compliance_ref_link);
+      } else {
+        selection_matrix = m_selection_matrix;
+      }
+      // Position controller: PID gains scale by m_stiffness
+      net_force = selection_matrix *
+              Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) *
+              MotionBase::computeMotionError()
+          // Sensor and target force in base orientation
+          + (ctrl::Matrix6D::Identity() - selection_matrix) *
+             ForceBase::computeForceError();
+  } else {
+      // use original spring-mass-damper control
+      net_force =
 
         // Spring force in base orientation
         Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) *
@@ -163,174 +176,37 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
 
         // Sensor and target force in base orientation
         + ForceBase::computeForceError();
-  else // Add a selection matrix to allow finer control of which control to
-       // use for each
-  {
-    if (m_use_parallel_force_position_control_in_gripper_frame) {
-      // Selection matrix assumed to be in robot's end-effector frame
-
-      // get error in base frame
-      pose_error = MotionBase::computeMotionError();
-      ft_error = ForceBase::computeForceError();
-
-      // transformation of gripper in base frame
-      KDL::Frame transform_kdl;
-      Base::m_forward_kinematics_solver->JntToCart(
-          Base::m_ik_solver->getPositions(), transform_kdl,
-          m_compliance_ref_link);
-      // Adjust format from kdl to matrix3d
-      eef_to_base << transform_kdl.M.data[0], transform_kdl.M.data[1],
-          transform_kdl.M.data[2], transform_kdl.M.data[3],
-          transform_kdl.M.data[4], transform_kdl.M.data[5],
-          transform_kdl.M.data[6], transform_kdl.M.data[7],
-          transform_kdl.M.data[8];
-
-      // changing the error such that the selection matrix from the gripper
-      // frame is applied in gripper frame
-      apply_selection_matrix_gripper_frame(pose_error, ft_error,
-                                           &pose_error_sel, &ft_error_sel,
-                                           m_selection_matrix, eef_to_base);
-
-      // stiffness scaling
-      net_force = m_stiffness * pose_error_sel + ft_error_sel;
-
-    } else if (m_use_parallel_force_position_control_powder_grinding) {
-      // selection matrix computed from estimated normal of bowl's surface
-      ctrl::Matrix6D m_selection_matrix_pd;
-      compute_selection_matrix_from_normal_surface(&m_selection_matrix_pd);
-
-      net_force =
-          // Position controller:   PID gains scale by m_stiffness
-          m_selection_matrix_pd *
-              Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) *
-              MotionBase::computeMotionError()
-
-          // Sensor and target force in base orientation
-          + ((ctrl::Matrix6D::Identity() - m_selection_matrix_pd) *
-             ForceBase::computeForceError());
-
-    } else {
-      // Selection matrix assumed to be in robot's base frame
-      net_force =
-
-          // Position controller: PID gains scale by m_stiffness
-          m_selection_matrix *
-              Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) *
-              MotionBase::computeMotionError()
-
-          // Sensor and target force in base orientation
-          + ((ctrl::Matrix6D::Identity() - m_selection_matrix) *
-             ForceBase::computeForceError());
-    }
   }
 
   return net_force;
 }
 
-// helper function for transforming
-
 template <class HardwareInterface>
-void CartesianComplianceController<HardwareInterface>::
-    apply_selection_matrix_gripper_frame(
-        ctrl::Vector6D pos_error_ref, ctrl::Vector6D force_error_ref,
-        ctrl::Vector6D *pos_error_sel, ctrl::Vector6D *force_error_sel,
-        ctrl::Matrix6D selection_matrix_gripper,
-        ctrl::Matrix3D R_gripper_to_ref) {
-  // Convert errors from reference frame to gripper frame
-  ctrl::Matrix6D bigR = ctrl::Matrix6D::Zero(6, 6);
-  bigR.topLeftCorner(3, 3) = R_gripper_to_ref;
-  bigR.bottomRightCorner(3, 3) = R_gripper_to_ref;
+void CartesianComplianceController<HardwareInterface>::apply_selection_matrix_gripper_frame(
+    ctrl::Vector6D pos_error, ctrl::Vector6D force_error,
+    ctrl::Vector6D *pos_error_sel, ctrl::Vector6D *force_error_sel,
+    ctrl::Matrix6D selection_matrix_gripper, ctrl::Matrix3D R_eef_to_base) 
+{
+    // Convert errors from reference frame to gripper frame
+    ctrl::Matrix6D bigR = ctrl::Matrix6D::Zero(6, 6);
+    bigR.topLeftCorner(3, 3) = R_eef_to_base;
+    bigR.bottomRightCorner(3, 3) = R_eef_to_base;
 
-  ctrl::Matrix6D invBigR = ctrl::Matrix6D::Zero(6, 6);
-  invBigR.topLeftCorner(3, 3) = R_gripper_to_ref.transpose();
-  invBigR.bottomRightCorner(3, 3) = R_gripper_to_ref.transpose();
+    ctrl::Matrix6D invBigR = ctrl::Matrix6D::Zero(6, 6);
+    invBigR.topLeftCorner(3, 3) = R_eef_to_base.transpose();
+    invBigR.bottomRightCorner(3, 3) = R_eef_to_base.transpose();
 
-  ctrl::Vector6D pose_error_gripper =
-      invBigR * pos_error_ref; // transpose,not inv since its just rotation,
-                               // without translation
-  ctrl::Vector6D ft_error_gripper = invBigR * force_error_ref;
+    // Transform errors to gripper frame (rotation only, no translation)
+    ctrl::Vector6D pose_error_gripper = invBigR * pos_error;
+    ctrl::Vector6D ft_error_gripper = invBigR * force_error;
 
-  // Apply selection matrix in gripper frame
-  ctrl::Vector6D selected_pose_error_gripper =
-      selection_matrix_gripper * pose_error_gripper;
-  ctrl::Vector6D selected_ft_error_gripper =
-      (ctrl::Matrix6D::Identity() - selection_matrix_gripper) *
-      ft_error_gripper;
+    // Apply selection matrix in gripper frame
+    ctrl::Vector6D selected_pose_error_gripper = selection_matrix_gripper * pose_error_gripper;
+    ctrl::Vector6D selected_ft_error_gripper = (ctrl::Matrix6D::Identity() - selection_matrix_gripper) * ft_error_gripper;
 
-  // Convert selected errors back to reference frame
-  *pos_error_sel = bigR * selected_pose_error_gripper;
-  *force_error_sel = bigR * selected_ft_error_gripper;
-}
-
-template <class HardwareInterface>
-void CartesianComplianceController<HardwareInterface>::
-    compute_selection_matrix_from_normal_surface(
-        ctrl::Matrix6D *m_selection_matrix_pd) {
-  auto pose = Base::m_ik_solver->getEndEffectorPose();
-  // std::cout << "xyz: " << pose.p.x() << ", " << pose.p.y() << ", "
-  //           << pose.p.z() << std::endl;
-  ctrl::Vector3D ee_pos;
-  ee_pos << pose.p.x(), pose.p.y(), pose.p.z();
-  // std::cout << "ee_pos:" << std::endl << ee_pos << std::endl;
-  ctrl::Vector3D center;
-  // center << 0.0, 0.5, 0.04;
-  // center << 0.0, 0.5, 0.081;
-  // center << 0.0, 0.5, 0.05;
-  center << -0.17, 0.51, 0.0755;
-  // std::cout << "center:" << std::endl << center << std::endl;
-  ctrl::Vector3D normal_vec;
-  // normal_vec = (ee_pos - center).normalized();
-  normal_vec = (center - ee_pos).normalized();
-  // normal_vec = (center - ee_pos).normalized();
-  // std::cout << "normal_vec:" << std::endl << normal_vec << std::endl;
-  ctrl::Vector3D x_basis;
-  x_basis << 1.0, 0.0, 0.0;
-  ctrl::Vector3D u_x = x_basis - x_basis.dot(normal_vec) * normal_vec;
-  // std::cout << "u_x:" << std::endl << u_x << std::endl;
-  u_x.normalize();
-  ctrl::Vector3D y_basis;
-  y_basis << 0.0, 1.0, 0.0;
-  ctrl::Vector3D u_y =
-      y_basis - y_basis.dot(normal_vec) * normal_vec - y_basis.dot(u_x) * u_x;
-  u_y.normalize();
-  // std::cout << "u_y:" << std::endl << u_y << std::endl;
-  ctrl::Matrix3D R_base2surface;
-  R_base2surface << u_x(0), u_y(0), normal_vec(0), u_x(1), u_y(1),
-      normal_vec(1), u_x(2), u_y(2), normal_vec(2);
-  // std::cout << "R_base2surface:" << std::endl << R_base2surface <<
-  // std::endl; ctrl::Matrix3D R_check = R_base2surface *
-  // R_base2surface.transpose(); std::cout << "R_check:" << std::endl <<
-  // R_check << std::endl;
-  double R_det = R_base2surface.determinant();
-  // std::cout << "R_det:" << std::endl << R_det << std::endl;
-  // ctrl::Matrix3D px;
-  // px << 0, -pose.p.z(), pose.p.y(), pose.p.z(), 0, -pose.p.x(),
-  // -pose.p.y(),
-  //     pose.p.x(), 0;
-  // std::cout << "px:" << std::endl << px << std::endl;
-  // ctrl::Matrix3D pxR;
-  // pxR = px * R_base2surface;
-  // std::cout << "pxR:" << std::endl << pxR << std::endl;
-  ctrl::Matrix6D Adjoint_T;
-  // Adjoint_T << R_base2surface, ctrl::Matrix3D::Zero(3, 3),
-  //                         pxR,             R_base2surface;
-  Adjoint_T << R_base2surface, ctrl::Matrix3D::Zero(3, 3),
-      ctrl::Matrix3D::Zero(3, 3), R_base2surface;
-  // std::cout << "Adjoint_T:" << std::endl << Adjoint_T << std::endl;
-  ctrl::Matrix6D Adjoint_T_inv;
-  ctrl::Matrix3D R_base2surface_T = R_base2surface.transpose();
-  // Adjoint_T_inv << R_base2surface_T, ctrl::Matrix3D::Zero(3, 3),
-  //                   pxR.transpose(),             R_base2surface_T;
-  Adjoint_T_inv << R_base2surface_T, ctrl::Matrix3D::Zero(3, 3),
-      ctrl::Matrix3D::Zero(3, 3), R_base2surface_T;
-  // std::cout << "Adjoint_T_inv:" << std::endl << Adjoint_T_inv <<
-  // std::endl;
-  ctrl::Matrix6D Adjoint_T_inv_check;
-  Adjoint_T_inv_check = Adjoint_T * Adjoint_T_inv;
-  // std::cout << "Adjoint_T_inv_check:" << std::endl
-  //           << Adjoint_T_inv_check << std::endl;
-
-  *m_selection_matrix_pd = Adjoint_T_inv * m_selection_matrix * Adjoint_T;
+    // Convert selected errors back to reference frame
+    *pos_error_sel = bigR * selected_pose_error_gripper;
+    *force_error_sel = bigR * selected_ft_error_gripper;
 }
 
 template <class HardwareInterface>
@@ -349,11 +225,8 @@ void CartesianComplianceController<
   m_use_parallel_force_position_control =
       config.use_parallel_force_position_control;
 
-  m_use_parallel_force_position_control_in_gripper_frame =
-      config.use_parallel_force_position_control_in_gripper_frame;
-
-  m_use_parallel_force_position_control_powder_grinding =
-      config.use_parallel_force_position_control_powder_grinding;
+  m_use_selection_matrix_in_gripper_frame =
+      config.use_selection_matrix_in_gripper_frame;
 
   tmp[0] = config.sel_x;
   tmp[1] = config.sel_y;

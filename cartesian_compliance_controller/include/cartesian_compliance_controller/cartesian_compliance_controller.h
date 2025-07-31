@@ -98,14 +98,22 @@ class CartesianComplianceController
 
     void update(const ros::Time& time, const ros::Duration& period);
 
-    void apply_selection_matrix_gripper_frame(ctrl::Vector6D pos_error_ref,
+    /**
+     * @brief Apply a selection matrix to the error in the gripper frame
+     *
+     * @param pos_error_ref The position error in the gripper frame
+     * @param force_error_ref The force error in the gripper frame
+     * @param pos_error_sel The position error in the gripper frame after applying the selection matrix
+     * @param force_error_sel The force error in the gripper frame after applying the selection matrix
+     * @param selection_matrix_gripper The selection matrix to apply
+     * @param R_gripper_to_ref The rotation matrix from the gripper frame to the reference frame
+     */
+     void apply_selection_matrix_gripper_frame(ctrl::Vector6D pos_error_ref,
                                               ctrl::Vector6D force_error_ref,
                                               ctrl::Vector6D *pos_error_sel,
                                               ctrl::Vector6D *force_error_sel,
                                               ctrl::Matrix6D selection_matrix_gripper,
                                               ctrl::Matrix3D R_gripper_to_ref);
-
-    void compute_selection_matrix_from_normal_surface(ctrl::Matrix6D *m_selection_matrix_pd);
 
     typedef cartesian_controller_base::CartesianControllerBase<HardwareInterface> Base;
     typedef cartesian_motion_controller::CartesianMotionController<HardwareInterface> MotionBase;
@@ -122,8 +130,7 @@ class CartesianComplianceController
     ctrl::Matrix6D        m_stiffness;
     ctrl::Matrix6D        m_selection_matrix;
     bool                  m_use_parallel_force_position_control;
-    bool                  m_use_parallel_force_position_control_in_gripper_frame;
-    bool                  m_use_parallel_force_position_control_powder_grinding;
+    bool                  m_use_selection_matrix_in_gripper_frame;
     std::string           m_compliance_ref_link;
 
     // Dynamic reconfigure for stiffness

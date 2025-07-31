@@ -385,6 +385,26 @@ displayInTipLink(const ctrl::Vector6D& vector, const std::string& to)
 }
 
 template <class HardwareInterface>
+ctrl::Matrix3D CartesianControllerBase<HardwareInterface>::
+getRotationMatrix(const std::string& from_link)
+{
+  // Get transformation from the specified link to base
+  KDL::Frame transform_kdl;
+  m_forward_kinematics_solver->JntToCart(
+      m_ik_solver->getPositions(),
+      transform_kdl,
+      from_link);
+
+  // Convert KDL rotation matrix to Matrix3D format
+  ctrl::Matrix3D R;
+  R << transform_kdl.M.data[0], transform_kdl.M.data[1], transform_kdl.M.data[2],
+       transform_kdl.M.data[3], transform_kdl.M.data[4], transform_kdl.M.data[5],
+       transform_kdl.M.data[6], transform_kdl.M.data[7], transform_kdl.M.data[8];
+
+  return R;
+}
+
+template <class HardwareInterface>
 void CartesianControllerBase<HardwareInterface>::
 publishStateFeedback()
 {

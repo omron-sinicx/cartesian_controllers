@@ -149,6 +149,15 @@ class CartesianControllerBase : public controller_interface::Controller<Hardware
     ctrl::Vector6D displayInTipLink(const ctrl::Vector6D& vector, const std::string& to);
 
     /**
+     * @brief Get the rotation matrix from a specified link frame to the base frame
+     *
+     * @param from_link The link whose frame rotation we want to get
+     *
+     * @return The 3x3 rotation matrix from the specified link frame to the base frame
+     */
+    ctrl::Matrix3D getRotationMatrix(const std::string& from_link);
+
+    /**
      * @brief Check if specified links are part of the robot chain
      *
      * @param s Link to check for existence
