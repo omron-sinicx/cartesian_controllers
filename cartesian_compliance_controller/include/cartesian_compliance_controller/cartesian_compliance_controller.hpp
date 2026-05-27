@@ -97,6 +97,11 @@ bool CartesianComplianceController<HardwareInterface>::init(
       ros::NodeHandle(nh.getNamespace() + "/stiffness")));
   m_dyn_conf_server->setCallback(m_callback_type);
 
+  m_set_stiffness_server = nh.advertiseService(
+      "set_stiffness",
+      &CartesianComplianceController<HardwareInterface>::setStiffnessCallback,
+      this);
+
   // KDL::Chain chain = Base::m_ik_solver->getChain();
   m_jnt_jacobian_solver.reset(
       new KDL::ChainJntToJacSolver(Base::m_ik_solver->getChain()));
@@ -149,6 +154,12 @@ void CartesianComplianceController<HardwareInterface>::update(
 template <class HardwareInterface>
 ctrl::Vector6D
 CartesianComplianceController<HardwareInterface>::computeComplianceError() {
+  ctrl::Matrix6D stiffness;
+  {
+    std::lock_guard<std::mutex> lock(m_stiffness_mutex);
+    stiffness = m_stiffness;
+  }
+  
   ctrl::Matrix6D selection_matrix;
   ctrl::Vector6D net_force;
 
@@ -161,7 +172,7 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
       }
       // Position controller: PID gains scale by m_stiffness
       net_force = selection_matrix *
-              Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) *
+              Base::displayInBaseLink(stiffness, m_compliance_ref_link) *
               MotionBase::computeMotionError()
           // Sensor and target force in base orientation
           + (ctrl::Matrix6D::Identity() - selection_matrix) *
@@ -171,7 +182,7 @@ CartesianComplianceController<HardwareInterface>::computeComplianceError() {
       net_force =
 
         // Spring force in base orientation
-        Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) *
+        Base::displayInBaseLink(stiffness, m_compliance_ref_link) *
             MotionBase::computeMotionError()
 
         // Sensor and target force in base orientation
@@ -213,28 +224,55 @@ template <class HardwareInterface>
 void CartesianComplianceController<
     HardwareInterface>::dynamicReconfigureCallback(ComplianceConfig &config,
                                                    uint32_t level) {
-  ctrl::Vector6D tmp;
-  tmp[0] = config.trans_x;
-  tmp[1] = config.trans_y;
-  tmp[2] = config.trans_z;
-  tmp[3] = config.rot_x;
-  tmp[4] = config.rot_y;
-  tmp[5] = config.rot_z;
-  m_stiffness = tmp.asDiagonal();
+  ctrl::Vector6D stiffness_diag;
+  stiffness_diag[0] = config.trans_x;
+  stiffness_diag[1] = config.trans_y;
+  stiffness_diag[2] = config.trans_z;
+  stiffness_diag[3] = config.rot_x;
+  stiffness_diag[4] = config.rot_y;
+  stiffness_diag[5] = config.rot_z;
+
+  ctrl::Vector6D selection_diag;
+  selection_diag[0] = config.sel_x;
+  selection_diag[1] = config.sel_y;
+  selection_diag[2] = config.sel_z;
+  selection_diag[3] = config.sel_ax;
+  selection_diag[4] = config.sel_ay;
+  selection_diag[5] = config.sel_az;
+
+  {
+    std::lock_guard<std::mutex> lock(m_stiffness_mutex);
+    m_stiffness = stiffness_diag.asDiagonal();
+    m_selection_matrix = selection_diag.asDiagonal();
+  }
 
   m_use_parallel_force_position_control =
       config.use_parallel_force_position_control;
 
   m_use_selection_matrix_in_gripper_frame =
       config.use_selection_matrix_in_gripper_frame;
+}
 
-  tmp[0] = config.sel_x;
-  tmp[1] = config.sel_y;
-  tmp[2] = config.sel_z;
-  tmp[3] = config.sel_ax;
-  tmp[4] = config.sel_ay;
-  tmp[5] = config.sel_az;
-  m_selection_matrix = tmp.asDiagonal();
+template <class HardwareInterface>
+bool CartesianComplianceController<HardwareInterface>::setStiffnessCallback(
+    cartesian_compliance_controller::SetStiffness::Request& req,
+    cartesian_compliance_controller::SetStiffness::Response& res)
+{
+  ctrl::Matrix6D stiffness;
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      stiffness(i, j) = req.stiffness[i * 6 + j];
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(m_stiffness_mutex);
+    m_stiffness = stiffness;
+  }
+
+  res.success = true;
+  res.message = "";
+  return true;
 }
 
 } // namespace cartesian_compliance_controller

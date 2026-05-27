@@ -49,6 +49,13 @@
 #include <dynamic_reconfigure/server.h>
 #include <cartesian_compliance_controller/ComplianceControllerConfig.h>
 
+// Service
+#include <ros/ros.h>
+#include <cartesian_compliance_controller/SetStiffness.h>
+
+// STL
+#include <mutex>
+
 // KDL
 #include <kdl/frames.hpp>
 #include <kdl/chain.hpp>
@@ -141,6 +148,16 @@ class CartesianComplianceController
 
     std::shared_ptr<dynamic_reconfigure::Server<ComplianceConfig> > m_dyn_conf_server;
     dynamic_reconfigure::Server<ComplianceConfig>::CallbackType m_callback_type;
+
+    // Service for setting the full (potentially non-diagonal) stiffness matrix
+    bool setStiffnessCallback(cartesian_compliance_controller::SetStiffness::Request& req,
+                              cartesian_compliance_controller::SetStiffness::Response& res);
+
+    ros::ServiceServer m_set_stiffness_server;
+
+    // Protects m_stiffness and m_selection_matrix from concurrent access
+    // between the service/dynamic_reconfigure callbacks and the update loop.
+    std::mutex m_stiffness_mutex;
 
     std::shared_ptr<KDL::ChainJntToJacSolver> m_jnt_jacobian_solver;
     std::shared_ptr<KDL::ChainDynParam>       m_jnt_space_inertia_solver;
