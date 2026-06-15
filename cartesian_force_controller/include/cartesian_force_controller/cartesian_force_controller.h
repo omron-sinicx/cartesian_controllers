@@ -42,6 +42,7 @@
 
 #include <cartesian_controller_base/ROS2VersionConfig.h>
 #include <cartesian_controller_base/cartesian_controller_base.h>
+#include <realtime_tools/realtime_publisher.h>
 
 #include <controller_interface/controller_interface.hpp>
 
@@ -102,6 +103,10 @@ protected:
   std::string m_new_ft_sensor_ref;
   void setFtSensorReferenceFrame(const std::string & new_ref);
 
+  void publishStateWrenchFeedback(
+    realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::WrenchStamped> & rt_publisher,
+    const ctrl::Vector6D & wrench);
+
 private:
   void targetWrenchCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr wrench);
   void ftSensorWrenchCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr wrench);
@@ -112,6 +117,13 @@ private:
   ctrl::Vector6D m_ft_sensor_wrench;
   std::string m_ft_sensor_ref_link;
   KDL::Frame m_ft_sensor_transform;
+
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::WrenchStamped>
+    m_feedback_sensor_wrench_publisher;
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::WrenchStamped>
+    m_feedback_target_wrench_publisher;
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::WrenchStamped>
+    m_feedback_net_force_wrench_publisher;
 
   /**
      * Allow users to choose whether to specify their target wrenches in the

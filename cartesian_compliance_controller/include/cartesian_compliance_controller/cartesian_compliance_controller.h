@@ -46,6 +46,11 @@
 #include <cartesian_motion_controller/cartesian_motion_controller.h>
 
 #include <controller_interface/controller_interface.hpp>
+#include <mutex>
+#include <rcl_interfaces/msg/set_parameters_result.hpp>
+#include <vector>
+
+#include "cartesian_compliance_controller/srv/set_stiffness.hpp"
 
 namespace cartesian_compliance_controller
 {
@@ -93,6 +98,12 @@ public:
   using MotionBase = cartesian_motion_controller::CartesianMotionController;
   using ForceBase = cartesian_force_controller::CartesianForceController;
 
+protected:
+  void onKinematicChainUpdated() override;
+
+  rcl_interfaces::msg::SetParametersResult onParametersSet(
+    const std::vector<rclcpp::Parameter> & parameters) override;
+
 private:
   /**
      * @brief Compute the net force of target wrench and stiffness-related pose offset
@@ -101,8 +112,19 @@ private:
      */
   ctrl::Vector6D computeComplianceError();
 
+  void updateStiffnessFromParameters();
+  void updateSelectionMatrixFromParameters();
+
+  void setStiffnessCallback(const std::shared_ptr<srv::SetStiffness::Request> request,
+                            std::shared_ptr<srv::SetStiffness::Response> response);
+
   ctrl::Matrix6D m_stiffness;
+  ctrl::Matrix6D m_selection_matrix;
+  std::mutex m_stiffness_mutex;
   std::string m_compliance_ref_link;
+  bool m_use_parallel_force_position_control;
+  bool m_use_selection_matrix_in_gripper_frame;
+  rclcpp::Service<srv::SetStiffness>::SharedPtr m_set_stiffness_server;
 };
 
 }  // namespace cartesian_compliance_controller

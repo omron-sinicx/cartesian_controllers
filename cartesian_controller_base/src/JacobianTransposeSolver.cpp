@@ -104,9 +104,10 @@ trajectory_msgs::msg::JointTrajectoryPoint JacobianTransposeSolver::getJointCont
 
 bool JacobianTransposeSolver::init(std::shared_ptr<rclcpp_lifecycle::LifecycleNode> nh,
                                    const KDL::Chain & chain, const KDL::JntArray & upper_pos_limits,
-                                   const KDL::JntArray & lower_pos_limits)
+                                   const KDL::JntArray & lower_pos_limits,
+                                   const KDL::JntArray & velocity_limits)
 {
-  IKSolver::init(nh, chain, upper_pos_limits, lower_pos_limits);
+  IKSolver::init(nh, chain, upper_pos_limits, lower_pos_limits, velocity_limits);
 
   m_jnt_jacobian_solver.reset(new KDL::ChainJntToJacSolver(m_chain));
   m_jnt_jacobian.resize(m_number_joints);

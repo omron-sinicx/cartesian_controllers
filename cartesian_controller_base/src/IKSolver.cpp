@@ -103,7 +103,8 @@ void IKSolver::synchronizeJointPositions(
 }
 
 bool IKSolver::init(std::shared_ptr<rclcpp_lifecycle::LifecycleNode> nh, const KDL::Chain & chain,
-                    const KDL::JntArray & upper_pos_limits, const KDL::JntArray & lower_pos_limits)
+                    const KDL::JntArray & upper_pos_limits, const KDL::JntArray & lower_pos_limits,
+                    const KDL::JntArray & velocity_limits)
 {
   // Initialize
   m_handle = nh;
@@ -116,6 +117,7 @@ bool IKSolver::init(std::shared_ptr<rclcpp_lifecycle::LifecycleNode> nh, const K
   m_last_velocities.data = ctrl::VectorND::Zero(m_number_joints);
   m_upper_pos_limits = upper_pos_limits;
   m_lower_pos_limits = lower_pos_limits;
+  m_velocity_limits = velocity_limits;
 
   // Forward kinematics
   m_fk_pos_solver.reset(new KDL::ChainFkSolverPos_recursive(m_chain));
@@ -151,6 +153,38 @@ void IKSolver::applyJointLimits()
     }
     m_current_positions(i) =
       std::clamp(m_current_positions(i), m_lower_pos_limits(i), m_upper_pos_limits(i));
+  }
+}
+
+void IKSolver::applyJointVelocityLimits()
+{
+  double velocity_scaling_factor{1.0};
+
+  for (int i = 0; i < m_number_joints; ++i)
+  {
+    // limit is 0.0 if not defined, so skip it
+    if (m_velocity_limits(i) == 0.0)
+    {
+      continue;
+    }
+
+    if (std::abs(m_current_velocities(i)) < 1e-12)
+    {
+      continue;
+    }
+
+    const double bounded_velocity =
+      std::clamp(m_current_velocities(i), -m_velocity_limits(i), m_velocity_limits(i));
+    velocity_scaling_factor =
+      std::min(velocity_scaling_factor, bounded_velocity / m_current_velocities(i));
+  }
+
+  if (velocity_scaling_factor < 1.0)
+  {
+    RCLCPP_WARN_STREAM_THROTTLE(
+      m_handle->get_logger(), *m_handle->get_clock(), 1000,
+      "Scaling down joint velocities by a factor of " << velocity_scaling_factor);
+    m_current_velocities.data *= velocity_scaling_factor;
   }
 }
 

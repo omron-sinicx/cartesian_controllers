@@ -51,6 +51,7 @@
 #include "geometry_msgs/msg/detail/pose_stamped__struct.hpp"
 #include "geometry_msgs/msg/detail/twist_stamped__struct.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
+#include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 
 namespace cartesian_controller_base
@@ -166,6 +167,7 @@ CartesianControllerBase::on_configure(const rclcpp_lifecycle::State & previous_s
     RCLCPP_ERROR(get_node()->get_logger(), "Failed to parse KDL tree from urdf model");
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
   }
+  m_robot_tree = robot_tree;
   if (!robot_tree.getChain(m_robot_base_link, m_end_effector_link, m_robot_chain))
   {
     const std::string error =
@@ -185,8 +187,9 @@ CartesianControllerBase::on_configure(const rclcpp_lifecycle::State & previous_s
   }
 
   // Parse joint limits
-  KDL::JntArray upper_pos_limits(m_joint_names.size());
-  KDL::JntArray lower_pos_limits(m_joint_names.size());
+  m_upper_pos_limits = KDL::JntArray(m_joint_names.size());
+  m_lower_pos_limits = KDL::JntArray(m_joint_names.size());
+  m_velocity_limits = KDL::JntArray(m_joint_names.size());
   for (size_t i = 0; i < m_joint_names.size(); ++i)
   {
     if (!robot_model.getJoint(m_joint_names[i]))
@@ -197,19 +200,29 @@ CartesianControllerBase::on_configure(const rclcpp_lifecycle::State & previous_s
     }
     if (robot_model.getJoint(m_joint_names[i])->type == urdf::Joint::CONTINUOUS)
     {
-      upper_pos_limits(i) = std::nan("0");
-      lower_pos_limits(i) = std::nan("0");
+      m_upper_pos_limits(i) = std::nan("0");
+      m_lower_pos_limits(i) = std::nan("0");
     }
     else
     {
       // Non-existent urdf limits are zero initialized
-      upper_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->upper;
-      lower_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->lower;
+      m_upper_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->upper;
+      m_lower_pos_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->lower;
+    }
+
+    if (robot_model.getJoint(m_joint_names[i])->limits)
+    {
+      m_velocity_limits(i) = robot_model.getJoint(m_joint_names[i])->limits->velocity;
+    }
+    else
+    {
+      m_velocity_limits(i) = 0.0;
     }
   }
 
   // Initialize solvers
-  m_ik_solver->init(get_node(), m_robot_chain, upper_pos_limits, lower_pos_limits);
+  m_ik_solver->init(get_node(), m_robot_chain, m_upper_pos_limits, m_lower_pos_limits,
+                    m_velocity_limits);
   KDL::Tree tmp("not_relevant");
   tmp.addChain(m_robot_chain, "not_relevant");
   m_forward_kinematics_solver.reset(new KDL::TreeFkSolverPos_recursive(tmp));
@@ -247,6 +260,10 @@ CartesianControllerBase::on_configure(const rclcpp_lifecycle::State & previous_s
     std::make_shared<realtime_tools::RealtimePublisher<geometry_msgs::msg::TwistStamped>>(
       get_node()->create_publisher<geometry_msgs::msg::TwistStamped>(
         std::string(get_node()->get_name()) + "/current_twist", 3));
+
+  m_param_callback_handle = get_node()->add_on_set_parameters_callback(
+    [this](const std::vector<rclcpp::Parameter> & parameters)
+    { return this->onParametersSet(parameters); });
 
   m_configured = true;
 
@@ -371,14 +388,14 @@ void CartesianControllerBase::writeJointControlCmds()
     {
       for (size_t i = 0; i < m_joint_names.size(); ++i)
       {
-        m_joint_cmd_pos_handles[i].get().set_value(m_simulated_joint_motion.positions[i]);
+        (void)m_joint_cmd_pos_handles[i].get().set_value(m_simulated_joint_motion.positions[i]);
       }
     }
     if (type == hardware_interface::HW_IF_VELOCITY)
     {
       for (size_t i = 0; i < m_joint_names.size(); ++i)
       {
-        m_joint_cmd_vel_handles[i].get().set_value(m_simulated_joint_motion.velocities[i]);
+        (void)m_joint_cmd_vel_handles[i].get().set_value(m_simulated_joint_motion.velocities[i]);
       }
     }
   }
@@ -505,6 +522,64 @@ void CartesianControllerBase::publishStateFeedback()
 
     m_feedback_twist_publisher->unlockAndPublish();
   }
+}
+
+bool CartesianControllerBase::rebuildKinematicChain(const std::string & new_end_effector_link)
+{
+  if (new_end_effector_link == m_end_effector_link)
+  {
+    return true;
+  }
+
+  KDL::Chain robot_chain;
+  if (!m_robot_tree.getChain(m_robot_base_link, new_end_effector_link, robot_chain))
+  {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "Failed to parse robot chain from urdf model. "
+                 "Do robot_base_link and end_effector_link exist? Ignoring update.");
+    return false;
+  }
+
+  m_robot_chain = robot_chain;
+  m_end_effector_link = new_end_effector_link;
+
+  m_ik_solver->init(get_node(), m_robot_chain, m_upper_pos_limits, m_lower_pos_limits,
+                    m_velocity_limits);
+  KDL::Tree tmp("not_relevant");
+  tmp.addChain(m_robot_chain, "not_relevant");
+  m_forward_kinematics_solver.reset(new KDL::TreeFkSolverPos_recursive(tmp));
+
+  onKinematicChainUpdated();
+  return true;
+}
+
+rcl_interfaces::msg::SetParametersResult CartesianControllerBase::onParametersSet(
+  const std::vector<rclcpp::Parameter> & parameters)
+{
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+
+  for (const auto & param : parameters)
+  {
+    if (param.get_name() == "end_effector_link")
+    {
+      if (m_active)
+      {
+        result.successful = false;
+        result.reason = "Cannot change end_effector_link while the controller is active.";
+        return result;
+      }
+
+      if (!rebuildKinematicChain(param.as_string()))
+      {
+        result.successful = false;
+        result.reason = "Invalid end_effector_link.";
+        return result;
+      }
+    }
+  }
+
+  return result;
 }
 
 }  // namespace cartesian_controller_base

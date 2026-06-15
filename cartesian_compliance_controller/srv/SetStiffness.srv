@@ -1,0 +1,16 @@
+# Set the full 6x6 stiffness matrix for the compliance controller.
+#
+# The matrix is given in row-major order with axes ordered as
+# [trans_x, trans_y, trans_z, rot_x, rot_y, rot_z].
+#
+# This service allows setting a fully-coupled (non-diagonal) stiffness matrix,
+# which is not possible through parameters (diagonal-only). Note that
+# a subsequent parameter update will overwrite it with a diagonal one.
+
+# Full 6x6 stiffness matrix [N/m for translation, Nm/rad for rotation], row-major
+float64[36] stiffness
+
+---
+
+bool success
+string message

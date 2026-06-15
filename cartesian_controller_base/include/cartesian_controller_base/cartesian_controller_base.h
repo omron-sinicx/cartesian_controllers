@@ -52,9 +52,12 @@
 #include <geometry_msgs/msg/wrench_stamped.hpp>
 #include <hardware_interface/loaned_command_interface.hpp>
 #include <hardware_interface/loaned_state_interface.hpp>
+#include <kdl/chain.hpp>
+#include <kdl/tree.hpp>
 #include <kdl/treefksolverpos_recursive.hpp>
 #include <memory>
 #include <pluginlib/class_loader.hpp>
+#include <rcl_interfaces/msg/set_parameters_result.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <trajectory_msgs/msg/joint_trajectory_point.hpp>
@@ -159,7 +162,7 @@ protected:
      *
      * @return True if existent, false otherwise
      */
-  bool robotChainContains(const std::string & s)
+  bool robotChainContains(const std::string & s) const
   {
     for (const auto & segment : this->m_robot_chain.segments)
     {
@@ -170,6 +173,17 @@ protected:
     }
     return false;
   }
+
+  /**
+   * @brief Hook for derived controllers after the kinematic chain was rebuilt
+   */
+  virtual void onKinematicChainUpdated() {}
+
+  /**
+   * @brief Handle runtime parameter updates
+   */
+  virtual rcl_interfaces::msg::SetParametersResult onParametersSet(
+    const std::vector<rclcpp::Parameter> & parameters);
 
   /**
    * @brief Helper method to check the controller's state during input callbacks
@@ -204,7 +218,7 @@ private:
   {
     for (size_t i = 0; i < m_joint_cmd_vel_handles.size(); ++i)
     {
-      m_joint_cmd_vel_handles[i].get().set_value(0.0);
+      (void)m_joint_cmd_vel_handles[i].get().set_value(0.0);
     }
   }
 
@@ -243,6 +257,14 @@ private:
   // Dynamic parameters
   double m_error_scale;
   std::string m_robot_description;
+
+  bool rebuildKinematicChain(const std::string & new_end_effector_link);
+
+  KDL::Tree m_robot_tree;
+  KDL::JntArray m_upper_pos_limits;
+  KDL::JntArray m_lower_pos_limits;
+  KDL::JntArray m_velocity_limits;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr m_param_callback_handle;
 };
 
 }  // namespace cartesian_controller_base

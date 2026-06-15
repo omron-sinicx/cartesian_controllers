@@ -17,6 +17,9 @@ from controller_manager_msgs.srv import SwitchController
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import WrenchStamped
 from rcl_interfaces.srv import GetParameters, SetParameters
+from cartesian_compliance_controller.srv import (  # type: ignore[attr-defined]
+    SetStiffness,
+)
 from typing import Any
 
 
@@ -235,6 +238,118 @@ class IntegrationTest(unittest.TestCase):
             result = self.get_parameters(client, [example_param])
             result = result.values[0].double_value
             self.assertTrue(result == new_value)
+
+    def test_compliance_parallel_stiffness_parameters(self):
+        """Check parallel force-position and stiffness selection parameters"""
+        client = self.set_parameter_clients["cartesian_compliance_controller"]
+        params = [
+            Parameter(
+                name="stiffness.use_parallel_force_position_control",
+                value=ParameterValue(
+                    type=ParameterType.PARAMETER_BOOL, bool_value=True
+                ),
+            ),
+            Parameter(
+                name="stiffness.sel_z",
+                value=ParameterValue(
+                    type=ParameterType.PARAMETER_DOUBLE, double_value=0.0
+                ),
+            ),
+            Parameter(
+                name="stiffness.trans_z",
+                value=ParameterValue(
+                    type=ParameterType.PARAMETER_DOUBLE, double_value=250.0
+                ),
+            ),
+        ]
+        self.set_parameters(client, params)
+
+        result = self.get_parameters(
+            self.get_parameter_clients["cartesian_compliance_controller"],
+            [
+                "stiffness.use_parallel_force_position_control",
+                "stiffness.sel_z",
+                "stiffness.trans_z",
+            ],
+        )
+        self.assertTrue(result.values[0].bool_value)
+        self.assertAlmostEqual(result.values[1].double_value, 0.0)
+        self.assertAlmostEqual(result.values[2].double_value, 250.0)
+
+    def test_end_effector_link_update_while_inactive(self):
+        """Runtime end_effector_link changes are accepted while inactive"""
+        controller = "cartesian_motion_controller"
+        get_client = self.get_parameter_clients[controller]
+        set_client = self.set_parameter_clients[controller]
+
+        result = self.get_parameters(get_client, ["end_effector_link"])
+        self.assertEqual(result.values[0].string_value, "tool0")
+
+        param = Parameter(
+            name="end_effector_link",
+            value=ParameterValue(
+                type=ParameterType.PARAMETER_STRING, string_value="tool0"
+            ),
+        )
+        self.set_parameters(set_client, [param])
+
+        result = self.get_parameters(get_client, ["end_effector_link"])
+        self.assertEqual(result.values[0].string_value, "tool0")
+
+    def test_wrench_state_feedback(self):
+        """Wrench feedback topics publish when state feedback is enabled"""
+        received = {"target": False, "net": False}
+
+        def target_cb(_msg):
+            received["target"] = True
+
+        def net_cb(_msg):
+            received["net"] = True
+
+        self.node.create_subscription(
+            WrenchStamped,
+            "/cartesian_force_controller/current_target_wrench",
+            target_cb,
+            10,
+        )
+        self.node.create_subscription(
+            WrenchStamped,
+            "/cartesian_force_controller/current_net_force_wrench",
+            net_cb,
+            10,
+        )
+
+        self.start_controller("cartesian_force_controller")
+
+        target_wrench = WrenchStamped()
+        target_wrench.header.frame_id = "base_link"
+        target_wrench.wrench.force.z = 5.0
+        for _ in range(20):
+            self.target_wrench_pub.publish(target_wrench)
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+        self.assertTrue(received["target"])
+        self.assertTrue(received["net"])
+        self.stop_controller("cartesian_force_controller")
+
+    def test_set_stiffness_service(self):
+        """SetStiffness service accepts a full 6x6 matrix"""
+        client = self.node.create_client(
+            SetStiffness, "/cartesian_compliance_controller/set_stiffness"
+        )
+        timeout = rclpy.time.Duration(seconds=5)
+        self.assertTrue(client.wait_for_service(timeout.nanoseconds / 1e9))
+
+        request = SetStiffness.Request()
+        request.stiffness = [0.0] * 36
+        for i in range(6):
+            request.stiffness[i * 6 + i] = 100.0 + i
+
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+        self.assertTrue(future.done())
+        response = future.result()
+        self.assertTrue(response.success)
 
     def check_state(self, controller, state):
         """Check the controller's state

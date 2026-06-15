@@ -149,7 +149,8 @@ public:
      */
 
   virtual bool init(std::shared_ptr<rclcpp_lifecycle::LifecycleNode> nh, const KDL::Chain & chain,
-                    const KDL::JntArray & upper_pos_limits, const KDL::JntArray & lower_pos_limits);
+                    const KDL::JntArray & upper_pos_limits, const KDL::JntArray & lower_pos_limits,
+                    const KDL::JntArray & velocity_limits);
 
   /**
      * @brief Update the robot kinematics of the solver
@@ -169,6 +170,15 @@ protected:
      * that this is the default urdf initializer if limits are omitted.
      */
   void applyJointLimits();
+
+  /**
+     * @brief Enforce URDF joint velocity limits on the internal model
+     *
+     * Joints with a velocity limit of zero are treated as unconstrained.
+     * When any joint exceeds its limit, all joint velocities are scaled
+     * uniformly to preserve the motion direction.
+     */
+  void applyJointVelocityLimits();
 
   template <typename ParameterT>
   auto auto_declare(const std::string & name, const ParameterT & default_value)
@@ -201,6 +211,7 @@ protected:
   // Joint limits
   KDL::JntArray m_upper_pos_limits;
   KDL::JntArray m_lower_pos_limits;
+  KDL::JntArray m_velocity_limits;
 
   // Forward kinematics
   std::shared_ptr<KDL::ChainFkSolverPos_recursive> m_fk_pos_solver;

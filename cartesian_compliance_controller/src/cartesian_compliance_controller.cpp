@@ -41,6 +41,7 @@
 
 #include "cartesian_controller_base/Utility.h"
 #include "controller_interface/controller_interface.hpp"
+#include "rcl_interfaces/msg/set_parameters_result.hpp"
 
 namespace cartesian_compliance_controller
 {
@@ -49,7 +50,9 @@ CartesianComplianceController::CartesianComplianceController()
 // explicitly
 : Base::CartesianControllerBase(),
   MotionBase::CartesianMotionController(),
-  ForceBase::CartesianForceController()
+  ForceBase::CartesianForceController(),
+  m_use_parallel_force_position_control(false),
+  m_use_selection_matrix_in_gripper_frame(false)
 {
 }
 
@@ -72,6 +75,17 @@ CartesianComplianceController::on_init()
   auto_declare<double>("stiffness.rot_x", default_rot_stiff);
   auto_declare<double>("stiffness.rot_y", default_rot_stiff);
   auto_declare<double>("stiffness.rot_z", default_rot_stiff);
+
+  constexpr double default_selection = 0.5;
+  auto_declare<double>("stiffness.sel_x", default_selection);
+  auto_declare<double>("stiffness.sel_y", default_selection);
+  auto_declare<double>("stiffness.sel_z", default_selection);
+  auto_declare<double>("stiffness.sel_ax", default_selection);
+  auto_declare<double>("stiffness.sel_ay", default_selection);
+  auto_declare<double>("stiffness.sel_az", default_selection);
+
+  auto_declare<bool>("stiffness.use_parallel_force_position_control", false);
+  auto_declare<bool>("stiffness.use_selection_matrix_in_gripper_frame", false);
 
   return TYPE::SUCCESS;
 }
@@ -99,6 +113,19 @@ CartesianComplianceController::on_configure(const rclcpp_lifecycle::State & prev
 
   // Make sure sensor wrenches are interpreted correctly
   ForceBase::setFtSensorReferenceFrame(m_compliance_ref_link);
+
+  m_use_parallel_force_position_control =
+    get_node()->get_parameter("stiffness.use_parallel_force_position_control").as_bool();
+  m_use_selection_matrix_in_gripper_frame =
+    get_node()->get_parameter("stiffness.use_selection_matrix_in_gripper_frame").as_bool();
+
+  updateStiffnessFromParameters();
+  updateSelectionMatrixFromParameters();
+
+  m_set_stiffness_server = get_node()->create_service<srv::SetStiffness>(
+    std::string(get_node()->get_name()) + "/set_stiffness",
+    std::bind(&CartesianComplianceController::setStiffnessCallback, this, std::placeholders::_1,
+              std::placeholders::_2));
 
   return TYPE::SUCCESS;
 }
@@ -156,27 +183,156 @@ controller_interface::return_type CartesianComplianceController::update(
   return controller_interface::return_type::OK;
 }
 
+void CartesianComplianceController::onKinematicChainUpdated()
+{
+  if (!Base::robotChainContains(m_compliance_ref_link))
+  {
+    RCLCPP_ERROR_STREAM(get_node()->get_logger(), m_compliance_ref_link
+                                                    << " is not part of the kinematic chain from "
+                                                    << Base::m_robot_base_link << " to "
+                                                    << Base::m_end_effector_link);
+    return;
+  }
+
+  ForceBase::setFtSensorReferenceFrame(m_compliance_ref_link);
+}
+
+rcl_interfaces::msg::SetParametersResult CartesianComplianceController::onParametersSet(
+  const std::vector<rclcpp::Parameter> & parameters)
+{
+  rcl_interfaces::msg::SetParametersResult result = Base::onParametersSet(parameters);
+  if (!result.successful)
+  {
+    return result;
+  }
+
+  bool stiffness_updated = false;
+  bool selection_updated = false;
+
+  for (const auto & param : parameters)
+  {
+    const auto & name = param.get_name();
+    if (name == "stiffness.use_parallel_force_position_control")
+    {
+      m_use_parallel_force_position_control = param.as_bool();
+    }
+    else if (name == "stiffness.use_selection_matrix_in_gripper_frame")
+    {
+      m_use_selection_matrix_in_gripper_frame = param.as_bool();
+    }
+    else if (name.rfind("stiffness.trans_", 0) == 0 || name.rfind("stiffness.rot_", 0) == 0)
+    {
+      stiffness_updated = true;
+    }
+    else if (name.rfind("stiffness.sel_", 0) == 0)
+    {
+      selection_updated = true;
+    }
+  }
+
+  if (stiffness_updated)
+  {
+    updateStiffnessFromParameters();
+  }
+  if (selection_updated)
+  {
+    updateSelectionMatrixFromParameters();
+  }
+
+  return result;
+}
+
+void CartesianComplianceController::updateStiffnessFromParameters()
+{
+  ctrl::Vector6D stiffness_diag;
+  stiffness_diag[0] = get_node()->get_parameter("stiffness.trans_x").as_double();
+  stiffness_diag[1] = get_node()->get_parameter("stiffness.trans_y").as_double();
+  stiffness_diag[2] = get_node()->get_parameter("stiffness.trans_z").as_double();
+  stiffness_diag[3] = get_node()->get_parameter("stiffness.rot_x").as_double();
+  stiffness_diag[4] = get_node()->get_parameter("stiffness.rot_y").as_double();
+  stiffness_diag[5] = get_node()->get_parameter("stiffness.rot_z").as_double();
+
+  std::lock_guard<std::mutex> lock(m_stiffness_mutex);
+  m_stiffness = stiffness_diag.asDiagonal();
+}
+
+void CartesianComplianceController::updateSelectionMatrixFromParameters()
+{
+  ctrl::Vector6D selection_diag;
+  selection_diag[0] = get_node()->get_parameter("stiffness.sel_x").as_double();
+  selection_diag[1] = get_node()->get_parameter("stiffness.sel_y").as_double();
+  selection_diag[2] = get_node()->get_parameter("stiffness.sel_z").as_double();
+  selection_diag[3] = get_node()->get_parameter("stiffness.sel_ax").as_double();
+  selection_diag[4] = get_node()->get_parameter("stiffness.sel_ay").as_double();
+  selection_diag[5] = get_node()->get_parameter("stiffness.sel_az").as_double();
+
+  std::lock_guard<std::mutex> lock(m_stiffness_mutex);
+  m_selection_matrix = selection_diag.asDiagonal();
+}
+
 ctrl::Vector6D CartesianComplianceController::computeComplianceError()
 {
-  ctrl::Vector6D tmp;
-  tmp[0] = get_node()->get_parameter("stiffness.trans_x").as_double();
-  tmp[1] = get_node()->get_parameter("stiffness.trans_y").as_double();
-  tmp[2] = get_node()->get_parameter("stiffness.trans_z").as_double();
-  tmp[3] = get_node()->get_parameter("stiffness.rot_x").as_double();
-  tmp[4] = get_node()->get_parameter("stiffness.rot_y").as_double();
-  tmp[5] = get_node()->get_parameter("stiffness.rot_z").as_double();
+  ctrl::Matrix6D stiffness;
+  ctrl::Matrix6D selection_matrix;
+  bool use_parallel = m_use_parallel_force_position_control;
+  bool use_gripper_frame = m_use_selection_matrix_in_gripper_frame;
 
-  m_stiffness = tmp.asDiagonal();
+  {
+    std::lock_guard<std::mutex> lock(m_stiffness_mutex);
+    stiffness = m_stiffness;
+    selection_matrix = m_selection_matrix;
+  }
 
-  ctrl::Vector6D net_force =
+  ctrl::Vector6D net_force;
 
-    // Spring force in base orientation
-    Base::displayInBaseLink(m_stiffness, m_compliance_ref_link) * MotionBase::computeMotionError()
+  if (use_parallel)
+  {
+    if (use_gripper_frame)
+    {
+      selection_matrix = Base::displayInBaseLink(selection_matrix, m_compliance_ref_link);
+    }
 
-    // Sensor and target force in base orientation
-    + ForceBase::computeForceError();
+    net_force = selection_matrix * Base::displayInBaseLink(stiffness, m_compliance_ref_link) *
+                  MotionBase::computeMotionError() +
+                (ctrl::Matrix6D::Identity() - selection_matrix) * ForceBase::computeForceError();
+  }
+  else
+  {
+    net_force =
+      Base::displayInBaseLink(stiffness, m_compliance_ref_link) * MotionBase::computeMotionError() +
+      ForceBase::computeForceError();
+  }
 
   return net_force;
+}
+
+void CartesianComplianceController::setStiffnessCallback(
+  const std::shared_ptr<srv::SetStiffness::Request> request,
+  std::shared_ptr<srv::SetStiffness::Response> response)
+{
+  if (request->stiffness.size() != 36)
+  {
+    response->success = false;
+    response->message = "Expected 36 stiffness values for a 6x6 matrix.";
+    return;
+  }
+
+  ctrl::Matrix6D stiffness;
+  for (int i = 0; i < 6; ++i)
+  {
+    for (int j = 0; j < 6; ++j)
+    {
+      stiffness(i, j) = request->stiffness[static_cast<size_t>(i * 6 + j)];
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(m_stiffness_mutex);
+    m_stiffness = stiffness;
+  }
+
+  response->success = true;
+  response->message = "";
 }
 
 }  // namespace cartesian_compliance_controller

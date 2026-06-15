@@ -13,10 +13,15 @@ endif(NOT CMAKE_BUILD_TYPE)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 add_definitions(-DEIGEN_MPL2_ONLY)
 find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(cartesian_controller_base REQUIRED)
 find_package(cartesian_motion_controller REQUIRED)
 find_package(cartesian_force_controller REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/SetStiffness.srv"
+)
 
 # Convenience variable for dependencies
 set(THIS_PACKAGE_INCLUDE_DEPENDS
@@ -34,11 +39,13 @@ ament_export_dependencies(
 #--------------------------------------------------------------------------------
 # Libraries
 #--------------------------------------------------------------------------------
-add_library(${PROJECT_NAME} SHARED
+add_library(${PROJECT_NAME}_plugin SHARED
   src/cartesian_compliance_controller.cpp
 )
 
-target_include_directories(${PROJECT_NAME}
+set_target_properties(${PROJECT_NAME}_plugin PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
+
+target_include_directories(${PROJECT_NAME}_plugin
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
@@ -46,13 +53,17 @@ target_include_directories(${PROJECT_NAME}
     ${EIGEN3_INCLUDE_DIR}
 )
 
-ament_target_dependencies(${PROJECT_NAME}
+ament_target_dependencies(${PROJECT_NAME}_plugin
         ${${PROJECT_NAME}_EXPORTED_TARGETS}
         ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
+rosidl_get_typesupport_target(cpp_typesupport_target
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(${PROJECT_NAME}_plugin "${cpp_typesupport_target}")
+
 # Prevent pluginlib from using boost
-target_compile_definitions(${PROJECT_NAME} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+target_compile_definitions(${PROJECT_NAME}_plugin PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
 #--------------------------------------------------------------------------------
 # Install and export
@@ -60,36 +71,24 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNC
 
 pluginlib_export_plugin_description_file(controller_interface cartesian_compliance_controller_plugin.xml)
 
-# Note: The workflow as described here https://docs.ros.org/en/foxy/How-To-Guides/Ament-CMake-Documentation.html#building-a-library
-# does not work for me.
-# I'm not sure what's the problem right now, but I need to out-comment the
-# lines below to achieve a correct symlink-install.
-
-#ament_export_targets(my_targets_from_this_package HAS_LIBRARY_TARGET)
-
 install(
   DIRECTORY include/
   DESTINATION include
 )
 
 install(
-  TARGETS ${PROJECT_NAME}
-  #EXPORT my_targets_from_this_package
+  TARGETS ${PROJECT_NAME}_plugin
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
-  #INCLUDES DESTINATION include
 )
 
-# Note: For the target based workflow, they seem to be superfluous.
-# But since that doesn't work yet, I'll add them just in case.
-# I took the joint_trajectory_controller as inspiration.
 ament_export_dependencies(${THIS_PACKAGE_INCLUDE_DEPENDS})
 ament_export_include_directories(
   include
 )
 ament_export_libraries(
-  ${PROJECT_NAME}
+  ${PROJECT_NAME}_plugin
 )
 
 ament_package()

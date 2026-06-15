@@ -101,6 +101,22 @@ CartesianForceController::on_configure(const rclcpp_lifecycle::State & previous_
   m_target_wrench.setZero();
   m_ft_sensor_wrench.setZero();
 
+  const auto controller_name = std::string(get_node()->get_name());
+  m_feedback_sensor_wrench_publisher =
+    std::make_shared<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>>(
+      get_node()->create_publisher<geometry_msgs::msg::WrenchStamped>(
+        controller_name + "/current_sensor_wrench", 3));
+
+  m_feedback_target_wrench_publisher =
+    std::make_shared<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>>(
+      get_node()->create_publisher<geometry_msgs::msg::WrenchStamped>(
+        controller_name + "/current_target_wrench", 3));
+
+  m_feedback_net_force_wrench_publisher =
+    std::make_shared<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>>(
+      get_node()->create_publisher<geometry_msgs::msg::WrenchStamped>(
+        controller_name + "/current_net_force_wrench", 3));
+
   return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
@@ -155,8 +171,19 @@ ctrl::Vector6D CartesianForceController::computeForceError()
     target_wrench = m_target_wrench;
   }
 
-  // Superimpose target wrench and sensor wrench in base frame
-  return Base::displayInBaseLink(m_ft_sensor_wrench, m_new_ft_sensor_ref) + target_wrench;
+  const ctrl::Vector6D sensor_wrench =
+    Base::displayInBaseLink(m_ft_sensor_wrench, m_new_ft_sensor_ref);
+
+  const ctrl::Vector6D net_force_wrench = sensor_wrench + target_wrench;
+
+  if (get_node()->get_parameter("solver.publish_state_feedback").as_bool())
+  {
+    publishStateWrenchFeedback(m_feedback_sensor_wrench_publisher, sensor_wrench);
+    publishStateWrenchFeedback(m_feedback_target_wrench_publisher, target_wrench);
+    publishStateWrenchFeedback(m_feedback_net_force_wrench_publisher, net_force_wrench);
+  }
+
+  return net_force_wrench;
 }
 
 void CartesianForceController::setFtSensorReferenceFrame(const std::string & new_ref)
@@ -239,6 +266,25 @@ void CartesianForceController::ftSensorWrenchCallback(
   m_ft_sensor_wrench[3] = tmp[3];
   m_ft_sensor_wrench[4] = tmp[4];
   m_ft_sensor_wrench[5] = tmp[5];
+}
+
+void CartesianForceController::publishStateWrenchFeedback(
+  realtime_tools::RealtimePublisherSharedPtr<geometry_msgs::msg::WrenchStamped> & rt_publisher,
+  const ctrl::Vector6D & wrench)
+{
+  if (rt_publisher->trylock())
+  {
+    rt_publisher->msg_.header.stamp = get_node()->now();
+    rt_publisher->msg_.header.frame_id = Base::m_robot_base_link;
+    rt_publisher->msg_.wrench.force.x = wrench[0];
+    rt_publisher->msg_.wrench.force.y = wrench[1];
+    rt_publisher->msg_.wrench.force.z = wrench[2];
+    rt_publisher->msg_.wrench.torque.x = wrench[3];
+    rt_publisher->msg_.wrench.torque.y = wrench[4];
+    rt_publisher->msg_.wrench.torque.z = wrench[5];
+
+    rt_publisher->unlockAndPublish();
+  }
 }
 
 }  // namespace cartesian_force_controller
