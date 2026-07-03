@@ -22,10 +22,39 @@ find_package(rclcpp REQUIRED)
 
 # Mujoco comes as a pre-built library package.
 # Extract this package somewhere and point CMake towards it during the build process.
+#
+# We auto-discover it so a plain `colcon build` works without any manual setup.
+# Resolution order (first hit wins):
+#   1. -DMUJOCO_DIR=... passed on the CMake/colcon command line
+#   2. the MUJOCO_DIR environment variable
+#   3. a versioned install under /opt (where the Docker image puts it)
+#   4. a versioned install under $HOME
+# The /opt and $HOME globs are sorted descending so the newest version wins.
 if(NOT DEFINED MUJOCO_DIR)
-        set(MUJOCO_DIR "$ENV{HOME}/mujoco-3.0.0") # CI setting
-        message(WARNING "MUJOCO_DIR not specified. Using default ${MUJOCO_DIR}")
+        if(DEFINED ENV{MUJOCO_DIR})
+                set(MUJOCO_DIR "$ENV{MUJOCO_DIR}")
+        else()
+                file(GLOB _mujoco_candidates
+                        "/opt/mujoco-*"
+                        "$ENV{HOME}/mujoco-*")
+                list(SORT _mujoco_candidates ORDER DESCENDING)
+                foreach(_candidate ${_mujoco_candidates})
+                        if(EXISTS "${_candidate}/lib/libmujoco.so")
+                                set(MUJOCO_DIR "${_candidate}")
+                                break()
+                        endif()
+                endforeach()
+        endif()
 endif()
+
+if(NOT MUJOCO_DIR OR NOT EXISTS "${MUJOCO_DIR}/lib/libmujoco.so")
+        message(FATAL_ERROR
+                "MuJoCo not found (searched -DMUJOCO_DIR, $ENV{MUJOCO_DIR}, "
+                "/opt/mujoco-* and $ENV{HOME}/mujoco-*). Download the pre-built "
+                "library package and point CMake to it via -DMUJOCO_DIR=<path> "
+                "or the MUJOCO_DIR environment variable. See README.md.")
+endif()
+message(STATUS "Using MuJoCo at ${MUJOCO_DIR}")
 set(MUJOCO_INCLUDE_DIRS ${MUJOCO_DIR}/include)
 set(MUJOCO_LIBRARIES
         ${MUJOCO_DIR}/lib/libmujoco.so

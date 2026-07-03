@@ -11,18 +11,28 @@ This gives us a strong environment to realistically test control and contact phe
 We use MuJoCo in [headless mode](https://mujoco.readthedocs.io/en/latest/programming.html?highlight=headless#using-opengl)
 and don't need OpenGL-related dependencies.
 
-1. Download MuJoCo's pre-built [library package](https://github.com/deepmind/mujoco/releases/) and extract that somewhere.
-It's ready-to-use and we will just point to it during the build.
-   ```bash
-   cd $HOME
-   wget https://github.com/deepmind/mujoco/releases/download/3.0.0/mujoco-3.0.0-linux-x86_64.tar.gz
-   tar -xf mujoco-3.0.0-linux-x86_64.tar.gz
-   ```
+**Inside the project's Docker image this is already handled for you:** MuJoCo is
+downloaded and extracted to `/opt/mujoco-<version>` and the `MUJOCO_DIR`
+environment variable is set (see `docker/dev/Dockerfile`). A plain
+`colcon build` finds it automatically — no extra CMake arguments needed.
 
-3. Switch to the *root* of your ROS2 workspace and build the package (*standalone*) with
+To build this package outside the image, make MuJoCo's pre-built
+[library package](https://github.com/google-deepmind/mujoco/releases/)
+available in one of these ways (checked in order):
+
+1. Pass it on the command line:
    ```bash
    colcon build --cmake-args "-DMUJOCO_DIR=$HOME/mujoco-3.0.0" --packages-select cartesian_controller_simulation
    ```
+2. Export the `MUJOCO_DIR` environment variable before building:
+   ```bash
+   cd $HOME
+   wget https://github.com/google-deepmind/mujoco/releases/download/3.0.0/mujoco-3.0.0-linux-x86_64.tar.gz
+   tar -xf mujoco-3.0.0-linux-x86_64.tar.gz
+   export MUJOCO_DIR=$HOME/mujoco-3.0.0
+   colcon build --packages-select cartesian_controller_simulation
+   ```
+3. Extract it to the default location `$HOME/mujoco-3.0.0`.
 
 
 ## Getting started
